@@ -1,0 +1,83 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../server/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String   @id @default(uuid())
+  phone        String?  @unique
+  email        String?  @unique
+  passwordHash String   @map("password_hash")
+  displayName  String   @map("display_name")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  lastLoginAt  DateTime? @map("last_login_at")
+
+  consultationRecords ConsultationRecord[]
+
+  @@map("users")
+}
+
+model ConsultationRecord {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  chiefComplaint String   @map("chief_complaint")
+  scenario       String
+  riskLevel      String   @map("risk_level")
+  status         String   @default("completed")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user    User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers ConsultationAnswer[]
+  result  ConsultationResult?
+
+  @@index([userId, createdAt])
+  @@map("consultation_records")
+}
+
+model ConsultationAnswer {
+  id           String   @id @default(uuid())
+  recordId     String   @map("record_id")
+  questionKey  String   @map("question_key")
+  questionText String   @map("question_text")
+  answerValue  Json     @map("answer_value")
+  answerText   String   @map("answer_text")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  record ConsultationRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@index([recordId])
+  @@map("consultation_answers")
+}
+
+model ConsultationResult {
+  id                    String   @id @default(uuid())
+  recordId              String   @unique @map("record_id")
+  riskLevel             String   @map("risk_level")
+  urgencyLevel          String   @map("urgency_level")
+  urgencyTitle          String   @map("urgency_title")
+  urgencyAdvice         String   @map("urgency_advice")
+  possibleDirections    Json     @map("possible_directions")
+  departmentSuggestion  String   @map("department_suggestion")
+  dailyAdvice           Json     @map("daily_advice")
+  doctorSummary         String   @map("doctor_summary")
+  uncertaintyItems      Json     @map("uncertainty_items")
+  aiStatus              String   @default("disabled") @map("ai_status")
+  aiModel               String?  @map("ai_model")
+  aiSummary             String?  @map("ai_summary")
+  missingInformation    Json?    @map("missing_information")
+  nextSteps             Json?    @map("next_steps")
+  safetyFlags           Json?    @map("safety_flags")
+  sourceReferences      Json?    @map("source_references")
+  webSearchUsed         Boolean  @default(false) @map("web_search_used")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  record ConsultationRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@map("consultation_results")
+}
