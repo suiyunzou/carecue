@@ -370,7 +370,7 @@ function App() {
 
   return (
     <main className="app-shell">
-      {view !== 'aiChat' ? (
+      {view !== 'aiChat' && (
         <header className="topbar">
           <button className="brand-button" onClick={() => setView('home')} type="button">
             <span className="brand-mark">
@@ -409,7 +409,38 @@ function App() {
             )}
           </nav>
         </header>
-      ) : null}
+      )}
+
+      {view === 'aiChat' && (
+        <header className="topbar">
+          <div className="brand-button">
+            <span className="brand-mark">
+              <HeartPulse size={22} />
+            </span>
+            <span>
+              <strong>问康</strong>
+              <small>CareCue</small>
+            </span>
+          </div>
+
+          <nav className="nav-actions" aria-label="主导航">
+            {user ? (
+              <>
+                <button className="primary-button small" onClick={() => setView('consult')} type="button">
+                  + 新咨询
+                </button>
+                <button className="ghost-button" onClick={loadHistory} type="button">
+                  <History size={18} />
+                  历史
+                </button>
+                <button className="icon-button" onClick={logout} title="退出登录" type="button">
+                  <User size={19} />
+                </button>
+              </>
+            ) : null}
+          </nav>
+        </header>
+      )}
 
       {message ? <div className="toast">{message}</div> : null}
 
