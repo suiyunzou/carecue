@@ -1,8 +1,8 @@
 # 阶段 3：AI 分析接入开发文档
 
-版本：v0.1  
-日期：2026-06-08  
-状态：基础版本已实现  
+版本：v0.2  
+日期：2026-06-09  
+状态：基于智能体 (Agentic Workflow) 的核心代码结构已实现（详见 `STAGE3_4_CHAT_SEARCH_MECHANISM.md` 和 `server/agent.ts`）。
 
 ## 1. 阶段目标
 
