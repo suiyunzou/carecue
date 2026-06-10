@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CareCue 病例流转 · c9397b7b</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --border: #2d3a4f;
+      --text: #e7ecf3;
+      --muted: #8b9cb3;
+      --accent: #5b9fd4;
+      --warn: #e8a838;
+      --err: #e85d5d;
+      --ok: #5cb87a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    header {
+      padding: 24px 32px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+    }
+    h1 { margin: 0 0 8px; font-size: 1.5rem; }
+    .sub { color: var(--muted); font-size: 0.9rem; }
+    main { padding: 24px 32px 48px; max-width: 1400px; margin: 0 auto; }
+    section { margin-bottom: 32px; }
+    h2 { font-size: 1.1rem; margin: 0 0 16px; color: var(--accent); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .card strong { display: block; font-size: 1.4rem; margin-bottom: 4px; }
+    .card span { color: var(--muted); font-size: 0.85rem; }
+    .warn { color: var(--warn); }
+    .err { color: var(--err); }
+    .ok { color: var(--ok); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { background: #243044; color: var(--muted); font-weight: 600; position: sticky; top: 0; }
+    tr:hover td { background: #1f2a3d; }
+    .step { font-family: ui-monospace, monospace; color: var(--accent); }
+    .phase-r1 { border-left: 3px solid var(--ok); }
+    .phase-r2 { border-left: 3px solid var(--warn); }
+    .phase-search { border-left: 3px solid #9b7ede; }
+    .phase-fail { border-left: 3px solid var(--err); }
+    .timeline-wrap { overflow-x: auto; padding-bottom: 8px; }
+    .timeline {
+      display: flex;
+      align-items: flex-end;
+      gap: 2px;
+      height: 120px;
+      min-width: 900px;
+    }
+    .bar {
+      flex: 1;
+      min-width: 4px;
+      background: var(--accent);
+      border-radius: 2px 2px 0 0;
+      position: relative;
+      opacity: 0.85;
+    }
+    .bar.search { background: #9b7ede; }
+    .bar.fail { background: var(--err); }
+    .bar:hover { opacity: 1; }
+    .mermaid { background: var(--panel); border-radius: 8px; padding: 16px; }
+    .layers {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+    }
+    @media (max-width: 900px) { .layers { grid-template-columns: 1fr; } }
+    .layer h3 { margin: 0 0 8px; font-size: 0.95rem; }
+    .layer ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 0.85rem; }
+    pre {
+      background: #0a0e14;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      overflow: auto;
+      font-size: 0.75rem;
+      max-height: 280px;
+    }
+    .turn {
+      border-left: 3px solid var(--accent);
+      padding-left: 12px;
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>问康 CareCue · 病例信息流转全景</h1>
+    <p class="sub">Case ID 前缀 <code>c9397b7b</code> · 数据来源：API 终端 Trace 日志 + PostgreSQL 查询 · 生成时间 2026/6/11 00:07:31</p>
+  </header>
+  <main>
+    <section>
+      <h2>摘要指标</h2>
+      <div class="grid">
+        <div class="card"><strong>63</strong><span>Trace 事件总数</span></div>
+        <div class="card"><strong>~254.0s</strong><span>估算端到端耗时（第2轮）</span></div>
+        <div class="card"><strong class="ok">2</strong><span>联网搜索轮次（均成功抽取证据）</span></div>
+        <div class="card"><strong class="err">stage_report</strong><span>最终输出（未落库 PostgreSQL）</span></div>
+        <div class="card"><strong class="warn">~72.0s</strong><span>单次搜索「来源过滤→证据抽取」估算耗时</span></div>
+        <div class="card"><strong>0</strong><span>数据库中 agent_v3 历史记录数</span></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>用户对话与系统输出</h2>
+      <div class="turn">
+          <strong>第 1 轮 · 主诉</strong>
+          <p>输入：胸口痛（用户首次描述）</p>
+          <p>输出：<code>followup(differential) — 追问疼痛性质/伴随症状/持续时间</code></p>
+        </div><div class="turn">
+          <strong>第 2 轮 · 补充</strong>
+          <p>输入：有针痛感；就今天；维持了5min → 24岁；左肩偶疼；按压能缓解</p>
+          <p>输出：<code>stage_report (TOOL_RUNTIME_ERROR) — case.analyze 失败后降级输出</code></p>
+        </div>
+    </section>
+
+    <section>
+      <h2>流程总览（Mermaid）</h2>
+      <div class="mermaid">flowchart TB
+    U1[用户: 胸口痛] --> P1[症状抽取 LLM]
+    P1 --> D1[症状域分类]
+    D1 --> R1[风险探查+评估 R1]
+    R1 --> A1{Agent决策}
+    A1 -->|ask_user| F1[追问 differential]
+    F1 --> U2[用户补充: 5min/24岁/左肩疼]
+    U2 --> P2[再抽取+再评估]
+    P2 --> A2{Agent决策}
+    A2 -->|search_medical| S1[Firecrawl 搜索#1]
+    S1 --> E1[抓取+证据抽取 LLM]
+    E1 --> A3{继续搜索}
+    A3 -->|search_medical| S2[Firecrawl 搜索#2]
+    S2 --> E2[抓取+证据抽取 LLM]
+    E2 --> A4{analyze_case}
+    A4 -->|TOOL_RUNTIME_ERROR| X[失败恢复 stage_report]
+    X --> OUT[SSE 返回前端]
+    OUT -.->|stage_report 不落库| DB[(PostgreSQL)]</div>
+    </section>
+
+    <section>
+      <h2>耗时分布（估算）</h2>
+      <p class="sub">Trace 终端日志未打印时间戳；下图按事件类型权重估算。第1轮约 <strong>30.4s</strong>，第2轮累计约 <strong>254.0s</strong>。搜索阶段 #47→#48、#54→#55 之间无日志，对应页面抓取 + LLM 证据抽取（最重）。</p>
+      <div class="timeline-wrap">
+        <div class="timeline">
+          <div class="bar " style="height:4%" title="#0 user_input 0ms cum=0ms"></div><div class="bar " style="height:4%" title="#1 state_merged 8ms cum=8ms"></div><div class="bar " style="height:4%" title="#2 tool_use 1.2s cum=1.2s"></div><div class="bar " style="height:5.833333333333333%" title="#3 tool_result 4.2s cum=5.4s"></div><div class="bar " style="height:4%" title="#4 state_merged 8ms cum=5.4s"></div><div class="bar " style="height:4%" title="#5 symptom_extracted 0ms cum=5.4s"></div><div class="bar " style="height:4%" title="#6 tool_use 1.2s cum=6.6s"></div><div class="bar " style="height:5.833333333333333%" title="#7 tool_result 4.2s cum=10.8s"></div><div class="bar " style="height:4%" title="#8 state_merged 8ms cum=10.8s"></div><div class="bar " style="height:4%" title="#9 symptom_domain_classified 0ms cum=10.8s"></div><div class="bar " style="height:4%" title="#10 tool_use 1.2s cum=12.0s"></div><div class="bar " style="height:5.833333333333333%" title="#11 tool_result 4.2s cum=16.2s"></div><div class="bar " style="height:4%" title="#12 state_merged 8ms cum=16.2s"></div><div class="bar " style="height:4%" title="#13 risk_probe 0ms cum=16.2s"></div><div class="bar " style="height:4%" title="#14 tool_use 1.2s cum=17.4s"></div><div class="bar " style="height:5.833333333333333%" title="#15 tool_result 4.2s cum=21.6s"></div><div class="bar " style="height:4%" title="#16 state_merged 8ms cum=21.6s"></div><div class="bar " style="height:4%" title="#17 risk_assessed 0ms cum=21.6s"></div><div class="bar " style="height:4%" title="#18 agent_decision 2.8s cum=24.4s"></div><div class="bar " style="height:4%" title="#19 state_merged 8ms cum=24.4s"></div><div class="bar " style="height:4%" title="#20 tool_use 1.2s cum=25.6s"></div><div class="bar " style="height:5.833333333333333%" title="#21 tool_result 4.2s cum=29.8s"></div><div class="bar " style="height:4%" title="#22 question_guard 120ms cum=30.0s"></div><div class="bar " style="height:4%" title="#23 state_merged 8ms cum=30.0s"></div><div class="bar " style="height:4%" title="#24 final_output 400ms cum=30.4s"></div><div class="bar " style="height:4%" title="#25 user_input 0ms cum=30.4s"></div><div class="bar " style="height:4%" title="#26 state_merged 8ms cum=30.4s"></div><div class="bar " style="height:4%" title="#27 tool_use 1.2s cum=31.6s"></div><div class="bar " style="height:5.833333333333333%" title="#28 tool_result 4.2s cum=35.8s"></div><div class="bar " style="height:4%" title="#29 state_merged 8ms cum=35.8s"></div><div class="bar " style="height:4%" title="#30 symptom_extracted 0ms cum=35.8s"></div><div class="bar " style="height:4%" title="#31 tool_use 1.2s cum=37.0s"></div><div class="bar " style="height:5.833333333333333%" title="#32 tool_result 4.2s cum=41.2s"></div><div class="bar " style="height:4%" title="#33 state_merged 8ms cum=41.2s"></div><div class="bar " style="height:4%" title="#34 symptom_domain_classified 0ms cum=41.2s"></div><div class="bar " style="height:4%" title="#35 tool_use 1.2s cum=42.4s"></div><div class="bar " style="height:5.833333333333333%" title="#36 tool_result 4.2s cum=46.6s"></div><div class="bar " style="height:4%" title="#37 state_merged 8ms cum=46.6s"></div><div class="bar " style="height:4%" title="#38 risk_probe 0ms cum=46.6s"></div><div class="bar " style="height:4%" title="#39 tool_use 1.2s cum=47.8s"></div><div class="bar " style="height:5.833333333333333%" title="#40 tool_result 4.2s cum=52.0s"></div><div class="bar " style="height:4%" title="#41 state_merged 8ms cum=52.0s"></div><div class="bar " style="height:4%" title="#42 risk_assessed 0ms cum=52.0s"></div><div class="bar " style="height:4%" title="#43 agent_decision 2.8s cum=54.8s"></div><div class="bar " style="height:4%" title="#44 state_merged 8ms cum=54.8s"></div><div class="bar " style="height:4.861111111111112%" title="#45 search_queries 3.5s cum=58.3s"></div><div class="bar " style="height:6.25%" title="#46 sources_accepted 4.5s cum=62.8s"></div><div class="bar " style="height:4%" title="#47 sources_rejected 0ms cum=62.8s"></div><div class="bar search" style="height:100%" title="#48 evidence_extracted 72.0s cum=134.8s"></div><div class="bar " style="height:4%" title="#49 state_merged 8ms cum=134.8s"></div><div class="bar " style="height:4%" title="#50 agent_decision 2.8s cum=137.6s"></div><div class="bar " style="height:4%" title="#51 state_merged 8ms cum=137.6s"></div><div class="bar " style="height:4.861111111111112%" title="#52 search_queries 3.5s cum=141.1s"></div><div class="bar " style="height:6.25%" title="#53 sources_accepted 4.5s cum=145.6s"></div><div class="bar " style="height:4%" title="#54 sources_rejected 0ms cum=145.6s"></div><div class="bar search" style="height:90.27777777777779%" title="#55 evidence_extracted 65.0s cum=210.6s"></div><div class="bar " style="height:4%" title="#56 state_merged 8ms cum=210.6s"></div><div class="bar " style="height:4%" title="#57 agent_decision 2.8s cum=213.4s"></div><div class="bar " style="height:4%" title="#58 state_merged 8ms cum=213.5s"></div><div class="bar " style="height:4%" title="#59 tool_use 1.2s cum=214.7s"></div><div class="bar fail" style="height:52.77777777777778%" title="#60 tool_result 38.0s cum=252.7s"></div><div class="bar fail" style="height:4%" title="#61 failure_recovery 900ms cum=253.6s"></div><div class="bar fail" style="height:4%" title="#62 final_output 400ms cum=254.0s"></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>存储层变化</h2>
+      <div class="layers">
+        <div class="card layer">
+          <h3>内存 · CaseState</h3>
+          <ul>
+            <li>症状/画像/风险/证据/搜索轨迹持续合并</li>
+            <li>版本号每次 merge +1（InMemoryCaseStore）</li>
+            <li>服务重启后丢失（本 case 仅在当次 dev:api 进程内）</li>
+          </ul>
+        </div>
+        <div class="card layer">
+          <h3>内存 · TraceLogger / MessageService</h3>
+          <ul>
+            <li>63 条 Trace 事件（本 HTML 数据来源）</li>
+            <li>用户消息 + 工具结果消息链</li>
+            <li>可通过 <code>GET /api/agent/cases/:id/debug</code> 读取（需登录+完整 caseId）</li>
+          </ul>
+        </div>
+        <div class="card layer">
+          <h3>PostgreSQL · 持久化</h3>
+          <ul>
+            <li><strong class="warn">本次未写入</strong>：仅 <code>final_report</code> / <code>emergency</code> 落库</li>
+            <li>输出为 <code>stage_report</code> → 无 consultation_records 行</li>
+            <li>库内最近记录：头晕 (dizziness)</li>
+            <li>含「胸」主诉记录：2 条</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>逐步 Trace · 流程 / 耗时 / 存储</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>轮次</th><th>阶段</th><th>事件</th><th>说明</th>
+            <th>单步耗时(估)</th><th>累计(估)</th><th>存储变化</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="phase-r1">
+                <td class="step">0</td>
+                <td>R1</td>
+                <td>预处理（抽取/分域/风险）</td>
+                <td><code>user_input</code></td>
+                <td>—</td>
+                <td>0ms</td>
+                <td>0ms</td>
+                <td><strong>MessageService</strong><br/><span style="color:var(--muted)">appendUserMessage → 内存消息历史</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">1</td>
+                <td>R1</td>
+                <td>预处理（抽取/分域/风险）</td>
+                <td><code>state_merged</code></td>
+                <td>user_message_received</td>
+                <td>8ms</td>
+                <td>8ms</td>
+                <td><strong>CaseState 合并</strong><br/><span style="color:var(--muted)">symptoms.userOriginalText += 用户消息 → InMemoryCaseStore (CaseState v++)</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">2</td>
+                <td>R1</td>
+                <td>预处理（抽取/分域/风险）</td>
+                <td><code>tool_use</code></td>
+                <td>—</td>
+                <td>1.2s</td>
+                <td>1.2s</td>
+                <td><strong>MessageService + TraceLogger</strong><br/><span style="color:var(--muted)">记录工具调用意图</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">3</td>
+                <td>R1</td>
+                <td>预处理（抽取/分域/风险）</td>
+                <td><code>tool_result</code></td>
+                <td>—</td>
+                <td>4.2s</td>
+                <td>5.4s</td>
+                <td><strong>MessageService + TraceLogger</strong><br/><span style="color:var(--muted)">appendToolResult → 工具输出写入消息链</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">4</td>
+                <td>R1</td>
+                <td>预处理（抽取/分域/风险）</td>
+                <td><code>state_merged</code></td>
+                <td>symptom_extracted</td>
+                <td>8ms</td>
+                <td>5.4s</td>
+                <td><strong>CaseState 合并</strong><br/><span style="color:var(--muted)">symptoms.*, userProfile.*（LLM 抽取） → InMemoryCaseStore</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">5</td>
+                <td>R1</td>
+                <td>预处理（抽取/分域/风险）</td>
+                <td><code>symptom_extracted</code></td>
+                <td>—</td>
+                <td>0ms</td>
+                <td>5.4s</td>
+                <td><strong>TraceLogger</strong><br/><span style="color:var(--muted)">—</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">6</td>
+                <td>R1</td>
+                <td>预处理（抽取/分域/风险）</td>
+                <td><code>tool_use</code></td>
+                <td>—</td>
+                <td>1.2s</td>
+                <td>6.6s</td>
+                <td><strong>MessageService + TraceLogger</strong><br/><span style="color:var(--muted)">记录工具调用意图</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">7</td>
+                <td>R1</td>
+                <td>预处理（抽取/分域/风险）</td>
+                <td><code>tool_result</code></td>
+                <td>—</td>
+                <td>4.2s</td>
+                <td>10.8s</td>
+                <td><strong>MessageService + TraceLogger</strong><br/><span style="color:var(--muted)">appendToolResult → 工具输出写入消息链</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">8</td>
+                <td>R1</td>
+                <td>预处理（抽取/分域/风险）</td>
+                <td><code>state_merged</code></td>
+                <td>symptom_domain_classified</td>
+                <td>8ms</td>
+                <td>10.8s</td>
+                <td><strong>CaseState 合并</strong><br/><span style="color:var(--muted)">symptomDomain.primaryDomain / supportedDepth → InMemoryCaseStore</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">9</td>
+                <td>R1</td>
+                <td>预处理（抽取/分域/风险）</td>
+                <td><code>symptom_domain_classified</code></td>
+                <td>—</td>
+                <td>0ms</td>
+                <td>10.8s</td>
+                <td><strong>TraceLogger</strong><br/><span style="color:var(--muted)">—</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">10</td>
+                <td>R1</td>
+                <td>预处理（抽取/分域/风险）</td>
+                <td><code>tool_use</code></td>
+                <td>—</td>
+                <td>1.2s</td>
+                <td>12.0s</td>
+                <td><strong>MessageService + TraceLogger</strong><br/><span style="color:var(--muted)">记录工具调用意图</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">11</td>
+                <td>R1</td>
+                <td>预处理（抽取/分域/风险）</td>
+                <td><code>tool_result</code></td>
+                <td>—</td>
+                <td>4.2s</td>
+                <td>16.2s</td>
+                <td><strong>MessageService + TraceLogger</strong><br/><span style="color:var(--muted)">appendToolResult → 工具输出写入消息链</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">12</td>
+                <td>R1</td>
+                <td>预处理（抽取/分域/风险）</td>
+                <td><code>state_merged</code></td>
+                <td>risk_probe_completed</td>
+                <td>8ms</td>
+                <td>16.2s</td>
+                <td><strong>CaseState 合并</strong><br/><span style="color:var(--muted)">riskProbe.requiredQuestions / probeStatus → InMemoryCaseStore</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">13</td>
+                <td>R1</td>
+                <td>预处理（抽取/分域/风险）</td>
+                <td><code>risk_probe</code></td>
+                <td>—</td>
+                <td>0ms</td>
+                <td>16.2s</td>
+                <td><strong>TraceLogger</strong><br/><span style="color:var(--muted)">—</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">14</td>
+                <td>R1</td>
+                <td>预处理（抽取/分域/风险）</td>
+                <td><code>tool_use</code></td>
+                <td>—</td>
+                <td>1.2s</td>
+                <td>17.4s</td>
+                <td><strong>MessageService + TraceLogger</strong><br/><span style="color:var(--muted)">记录工具调用意图</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">15</td>
+                <td>R1</td>
+                <td>预处理（抽取/分域/风险）</td>
+                <td><code>tool_result</code></td>
+                <td>—</td>
+                <td>4.2s</td>
+                <td>21.6s</td>
+                <td><strong>MessageService + TraceLogger</strong><br/><span style="color:var(--muted)">appendToolResult → 工具输出写入消息链</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">16</td>
+                <td>R1</td>
+                <td>预处理（抽取/分域/风险）</td>
+                <td><code>state_merged</code></td>
+                <td>risk_assessed</td>
+                <td>8ms</td>
+                <td>21.6s</td>
+                <td><strong>CaseState 合并</strong><br/><span style="color:var(--muted)">risk.level / redFlags / matchedRules / reason → InMemoryCaseStore</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">17</td>
+                <td>R1</td>
+                <td>预处理（抽取/分域/风险）</td>
+                <td><code>risk_assessed</code></td>
+                <td>—</td>
+                <td>0ms</td>
+                <td>21.6s</td>
+                <td><strong>TraceLogger</strong><br/><span style="color:var(--muted)">—</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">18</td>
+                <td>R1</td>
+                <td>追问生成</td>
+                <td><code>agent_decision</code></td>
+                <td>—</td>
+                <td>2.8s</td>
+                <td>24.4s</td>
+                <td><strong>TraceLogger</strong><br/><span style="color:var(--muted)">decideAction LLM/规则 → 下一动作</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">19</td>
+                <td>R1</td>
+                <td>追问生成</td>
+                <td><code>state_merged</code></td>
+                <td>decision_ask_user</td>
+                <td>8ms</td>
+                <td>24.4s</td>
+                <td><strong>CaseState 合并</strong><br/><span style="color:var(--muted)">decisionHistory += ask_user 决策 → InMemoryCaseStore + meta.agentSteps++</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">20</td>
+                <td>R1</td>
+                <td>追问生成</td>
+                <td><code>tool_use</code></td>
+                <td>—</td>
+                <td>1.2s</td>
+                <td>25.6s</td>
+                <td><strong>MessageService + TraceLogger</strong><br/><span style="color:var(--muted)">记录工具调用意图</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">21</td>
+                <td>R1</td>
+                <td>追问生成</td>
+                <td><code>tool_result</code></td>
+                <td>—</td>
+                <td>4.2s</td>
+                <td>29.8s</td>
+                <td><strong>MessageService + TraceLogger</strong><br/><span style="color:var(--muted)">appendToolResult → 工具输出写入消息链</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">22</td>
+                <td>R1</td>
+                <td>追问生成</td>
+                <td><code>question_guard</code></td>
+                <td>—</td>
+                <td>120ms</td>
+                <td>30.0s</td>
+                <td><strong>TraceLogger</strong><br/><span style="color:var(--muted)">过滤已问过/低价值追问</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">23</td>
+                <td>R1</td>
+                <td>追问生成</td>
+                <td><code>state_merged</code></td>
+                <td>asked_questions_recorded</td>
+                <td>8ms</td>
+                <td>30.0s</td>
+                <td><strong>CaseState 合并</strong><br/><span style="color:var(--muted)">askedQuestions, status=waiting_user, meta.followupRounds++ → InMemoryCaseStore</span></td>
+              </tr><tr class="phase-r1">
+                <td class="step">24</td>
+                <td>R1</td>
+                <td>第1轮输出</td>
+                <td><code>final_output</code></td>
+                <td>followup(differential)</td>
+                <td>400ms</td>
+                <td>30.4s</td>
+                <td><strong>SSE 流 → 前端</strong><br/><span style="color:var(--muted)">返回 followup / stage_report 给客户端</span></td>
+              </tr><tr class="phase-r2">
+                <td class="step">25</td>
+                <td>R2</td>
+                <td>第2轮预处理</td>
+                <td><code>user_input</code></td>
+                <td>—</td>
+                <td>0ms</td>
+                <td>30.4s</td>
+                <td><strong>MessageService</strong><br/><span style="color:var(--muted)">appendUserMessage → 内存消息历史</span></td>
+              </tr><tr class="phase-r2">
+                <td class="step">26</td>
+                <td>R2</td>
+                <td>第2轮预处理</td>
+                <td><code>state_merged</code></td>
+                <td>user_message_received</td>
+                <td>8ms</td>
+                <td>30.4s</td>
+                <td><strong>CaseState 合并</strong><br/><span style="color:var(--muted)">symptoms.userOriginalText += 用户消息 → InMemoryCaseStore (CaseState v++)</span></td>
+              </tr><tr class="phase-r2">
+                <td class="step">27</td>
+                <td>R2</td>
+                <td>第2轮预处理</td>
+                <td><code>tool_use</code></td>
+                <td>—</td>
+                <td>1.2s</td>
+                <td>31.6s</td>
+                <td><strong>MessageService + TraceLogger</strong><br/><span style="color:var(--muted)">记录工具调用意图</span></td>
+              </tr><tr class="phase-r2">
+                <td class="step">28</td>
+                <td>R2</td>
+                <td>第2轮预处理</td>
+                <td><code>tool_result</code></td>
+                <td>—</td>
+                <td>4.2s</td>
+                <td>35.8s</td>
+                <td><strong>MessageService + TraceLogger</strong><br/><span style="color:var(--muted)">appendToolResult → 工具输出写入消息链</span></td>
+              </tr><tr class="phase-r2">
+                <td class="step">29</td>
+                <td>R2</td>
+                <td>第2轮预处理</td>
+                <td><code>state_merged</code></td>
+                <td>symptom_extracted</td>
+                <td>8ms</td>
+                <td>35.8s</td>
+                <td><strong>CaseState 合并</strong><br/><span style="color:var(--muted)">symptoms.*, userProfile.*（LLM 抽取） → InMemoryCaseStore</span></td>
+              </tr><tr class="phase-r2">
+                <td class="step">30</td>
+                <td>R2</td>
+                <td>第2轮预处理</td>
+                <td><code>symptom_extracted</code></td>
+                <td>—</td>
+                <td>0ms</td>
+                <td>35.8s</td>
+                <td><strong>TraceLogger</strong><br/><span style="color:var(--muted)">—</span></td>
+              </tr><tr class="phase-r2">
+                <td class="step">31</td>
+                <td>R2</td>
+                <td>第2轮预处理</td>
+                <td><code>tool_use</code></td>
+                <td>—</td>
+                <td>1.2s</td>
+                <td>37.0s</td>
+                <td><strong>MessageService + TraceLogger</strong><br/><span style="color:var(--muted)">记录工具调用意图</span></td>
+              </tr><tr class="phase-r2">
+                <td class="step">32</td>
+                <td>R2</td>
+                <td>第2轮预处理</td>
+                <td><code>tool_result</code></td>
+                <td>—</td>
+                <td>4.2s</td>
+                <td>41.2s</td>
+                <td><strong>MessageService + TraceLogger</strong><br/><span style="color:var(--muted)">appendToolResult → 工具输出写入消息链</span></td>
+              </tr><tr class="phase-r2">
+                <td class="step">33</td>
+                <td>R2</td>
+                <td>第2轮预处理</td>
+                <td><code>state_merged</code></td>
+                <td>symptom_domain_classified</td>
+                <td>8ms</td>
+                <td>41.2s</td>
+                <td><strong>CaseState 合并</strong><br/><span style="color:var(--muted)">symptomDomain.primaryDomain / supportedDepth → InMemoryCaseStore</span></td>
+              </tr><tr class="phase-r2">
+                <td class="step">34</td>
+                <td>R2</td>
+                <td>第2轮预处理</td>
+                <td><code>symptom_domain_classified</code></td>
+                <td>—</td>
+                <td>0ms</td>
+                <td>41.2s</td>
+                <td><strong>TraceLogger</strong><br/><span style="color:var(--muted)">—</span></td>
+              </tr><tr class="phase-r2">
+                <td class="step">35</td>
+                <td>R2</td>
+                <td>第2轮预处理</td>
+                <td><code>tool_use</code></td>
+                <td>—</td>
+                <td>1.2s</td>
+                <td>42.4s</td>
+                <td><strong>MessageService + TraceLogger</strong><br/><span style="color:var(--muted)">记录工具调用意图</span></td>
+              </tr><tr class="phase-r2">
+                <td class="step">36</td>
+                <td>R2</td>
+                <td>第2轮预处理</td>
+                <td><code>tool_result</code></td>
+                <td>—</td>
+                <td>4.2s</td>
+                <td>46.6s</td>
+                <td><strong>MessageService + TraceLogger</strong><br/><span style="color:var(--muted)">appendToolResult → 工具输出写入消息链</span></td>
+              </tr><tr class="phase-r2">
+                <td class="step">37</td>
+                <td>R2</td>
+                <td>第2轮预处理</td>
+                <td><code>state_merged</code></td>
+                <td>risk_probe_completed</td>
+                <td>8ms</td>
+                <td>46.6s</td>
+                <td><strong>CaseState 合并</strong><br/><span style="color:var(--muted)">riskProbe.requiredQuestions / probeStatus → InMemoryCaseStore</span></td>
+              </tr><tr class="phase-r2">
+                <td class="step">38</td>
+                <td>R2</td>
+                <td>第2轮预处理</td>
+                <td><code>risk_probe</code></td>
+                <td>—</td>
+                <td>0ms</td>
+                <td>46.6s</td>
+                <td><strong>TraceLogger</strong><br/><span style="color:var(--muted)">—</span></td>
+              </tr><tr class="phase-r2">
+                <td class="step">39</td>
+                <td>R2</td>
+                <td>第2轮预处理</td>
+                <td><code>tool_use</code></td>
+                <td>—</td>
+                <td>1.2s</td>
+                <td>47.8s</td>
+                <td><strong>MessageService + TraceLogger</strong><br/><span style="color:var(--muted)">记录工具调用意图</span></td>
+              </tr><tr class="phase-r2">
+                <td class="step">40</td>
+                <td>R2</td>
+                <td>第2轮预处理</td>
+                <td><code>tool_result</code></td>
+                <td>—</td>
+                <td>4.2s</td>
+                <td>52.0s</td>
+                <td><strong>MessageService + TraceLogger</strong><br/><span style="color:var(--muted)">appendToolResult → 工具输出写入消息链</span></td>
+              </tr><tr class="phase-r2">
+                <td class="step">41</td>
+                <td>R2</td>
+                <td>第2轮预处理</td>
+                <td><code>state_merged</code></td>
+                <td>risk_assessed</td>
+                <td>8ms</td>
+                <td>52.0s</td>
+                <td><strong>CaseState 合并</strong><br/><span style="color:var(--muted)">risk.level / redFlags / matchedRules / reason → InMemoryCaseStore</span></td>
+              </tr><tr class="phase-r2">
+                <td class="step">42</td>
+                <td>R2</td>
+                <td>第2轮预处理</td>
+                <td><code>risk_assessed</code></td>
+                <td>—</td>
+                <td>0ms</td>
+                <td>52.0s</td>
+                <td><strong>TraceLogger</strong><br/><span style="color:var(--muted)">—</span></td>
+              </tr><tr class="phase-r2">
+                <td class="step">43</td>
+                <td>R2</td>
+                <td>第2轮预处理</td>
+                <td><code>agent_decision</code></td>
+                <td>—</td>
+                <td>2.8s</td>
+                <td>54.8s</td>
+                <td><strong>TraceLogger</strong><br/><span style="color:var(--muted)">decideAction LLM/规则 → 下一动作</span></td>
+              </tr><tr class="phase-search">
+                <td class="step">44</td>
+                <td>R2</td>
+                <td>联网检索 · 第1轮</td>
+                <td><code>state_merged</code></td>
+                <td>decision_search_medical</td>
+                <td>8ms</td>
+                <td>54.8s</td>
+                <td><strong>CaseState 合并</strong><br/><span style="color:var(--muted)">decisionHistory += search_medical → InMemoryCaseStore + meta.agentSteps++</span></td>
+              </tr><tr class="phase-search">
+                <td class="step">45</td>
+                <td>R2</td>
+                <td>联网检索 · 第1轮</td>
+                <td><code>search_queries</code></td>
+                <td>—</td>
+                <td>3.5s</td>
+                <td>58.3s</td>
+                <td><strong>TraceLogger + CaseState(证据)</strong><br/><span style="color:var(--muted)">Trace 记录检索词（不直接改 CaseState）</span></td>
+              </tr><tr class="phase-search">
+                <td class="step">46</td>
+                <td>R2</td>
+                <td>联网检索 · 第1轮</td>
+                <td><code>sources_accepted</code></td>
+                <td>—</td>
+                <td>4.5s</td>
+                <td>62.8s</td>
+                <td><strong>TraceLogger + CaseState(证据)</strong><br/><span style="color:var(--muted)">白名单过滤后的来源列表（Trace）</span></td>
+              </tr><tr class="phase-search">
+                <td class="step">47</td>
+                <td>R2</td>
+                <td>联网检索 · 第1轮</td>
+                <td><code>sources_rejected</code></td>
+                <td>—</td>
+                <td>0ms</td>
+                <td>62.8s</td>
+                <td><strong>TraceLogger + CaseState(证据)</strong><br/><span style="color:var(--muted)">D级/重复来源（Trace）</span></td>
+              </tr><tr class="phase-search">
+                <td class="step">48</td>
+                <td>R2</td>
+                <td>联网检索 · 第1轮</td>
+                <td><code>evidence_extracted</code></td>
+                <td>dropped: 0</td>
+                <td>72.0s</td>
+                <td>134.8s</td>
+                <td><strong>TraceLogger + CaseState(证据)</strong><br/><span style="color:var(--muted)">evidence[] 写入 CaseState（抓取+LLM抽取后）</span></td>
+              </tr><tr class="phase-search">
+                <td class="step">49</td>
+                <td>R2</td>
+                <td>联网检索 · 第1轮</td>
+                <td><code>state_merged</code></td>
+                <td>search_pipeline_completed</td>
+                <td>8ms</td>
+                <td>134.8s</td>
+                <td><strong>CaseState 合并</strong><br/><span style="color:var(--muted)">evidence[], searchTrace[], meta.searchRounds++ → InMemoryCaseStore</span></td>
+              </tr><tr class="phase-search">
+                <td class="step">50</td>
+                <td>R2</td>
+                <td>联网检索 · 第2轮</td>
+                <td><code>agent_decision</code></td>
+                <td>—</td>
+                <td>2.8s</td>
+                <td>137.6s</td>
+                <td><strong>TraceLogger</strong><br/><span style="color:var(--muted)">decideAction LLM/规则 → 下一动作</span></td>
+              </tr><tr class="phase-search">
+                <td class="step">51</td>
+                <td>R2</td>
+                <td>联网检索 · 第2轮</td>
+                <td><code>state_merged</code></td>
+                <td>decision_search_medical</td>
+                <td>8ms</td>
+                <td>137.6s</td>
+                <td><strong>CaseState 合并</strong><br/><span style="color:var(--muted)">decisionHistory += search_medical → InMemoryCaseStore + meta.agentSteps++</span></td>
+              </tr><tr class="phase-search">
+                <td class="step">52</td>
+                <td>R2</td>
+                <td>联网检索 · 第2轮</td>
+                <td><code>search_queries</code></td>
+                <td>—</td>
+                <td>3.5s</td>
+                <td>141.1s</td>
+                <td><strong>TraceLogger + CaseState(证据)</strong><br/><span style="color:var(--muted)">Trace 记录检索词（不直接改 CaseState）</span></td>
+              </tr><tr class="phase-search">
+                <td class="step">53</td>
+                <td>R2</td>
+                <td>联网检索 · 第2轮</td>
+                <td><code>sources_accepted</code></td>
+                <td>—</td>
+                <td>4.5s</td>
+                <td>145.6s</td>
+                <td><strong>TraceLogger + CaseState(证据)</strong><br/><span style="color:var(--muted)">白名单过滤后的来源列表（Trace）</span></td>
+              </tr><tr class="phase-search">
+                <td class="step">54</td>
+                <td>R2</td>
+                <td>联网检索 · 第2轮</td>
+                <td><code>sources_rejected</code></td>
+                <td>—</td>
+                <td>0ms</td>
+                <td>145.6s</td>
+                <td><strong>TraceLogger + CaseState(证据)</strong><br/><span style="color:var(--muted)">D级/重复来源（Trace）</span></td>
+              </tr><tr class="phase-search">
+                <td class="step">55</td>
+                <td>R2</td>
+                <td>联网检索 · 第2轮</td>
+                <td><code>evidence_extracted</code></td>
+                <td>dropped: 0</td>
+                <td>65.0s</td>
+                <td>210.6s</td>
+                <td><strong>TraceLogger + CaseState(证据)</strong><br/><span style="color:var(--muted)">evidence[] 写入 CaseState（抓取+LLM抽取后）</span></td>
+              </tr><tr class="phase-search">
+                <td class="step">56</td>
+                <td>R2</td>
+                <td>联网检索 · 第2轮</td>
+                <td><code>state_merged</code></td>
+                <td>search_pipeline_completed</td>
+                <td>8ms</td>
+                <td>210.6s</td>
+                <td><strong>CaseState 合并</strong><br/><span style="color:var(--muted)">evidence[], searchTrace[], meta.searchRounds++ → InMemoryCaseStore</span></td>
+              </tr><tr class="phase-fail">
+                <td class="step">57</td>
+                <td>R2</td>
+                <td>病例分析（失败）</td>
+                <td><code>agent_decision</code></td>
+                <td>—</td>
+                <td>2.8s</td>
+                <td>213.4s</td>
+                <td><strong>TraceLogger</strong><br/><span style="color:var(--muted)">decideAction LLM/规则 → 下一动作</span></td>
+              </tr><tr class="phase-fail">
+                <td class="step">58</td>
+                <td>R2</td>
+                <td>病例分析（失败）</td>
+                <td><code>state_merged</code></td>
+                <td>decision_analyze_case</td>
+                <td>8ms</td>
+                <td>213.5s</td>
+                <td><strong>CaseState 合并</strong><br/><span style="color:var(--muted)">decisionHistory += analyze_case → InMemoryCaseStore + meta.agentSteps++</span></td>
+              </tr><tr class="phase-fail">
+                <td class="step">59</td>
+                <td>R2</td>
+                <td>病例分析（失败）</td>
+                <td><code>tool_use</code></td>
+                <td>—</td>
+                <td>1.2s</td>
+                <td>214.7s</td>
+                <td><strong>MessageService + TraceLogger</strong><br/><span style="color:var(--muted)">记录工具调用意图</span></td>
+              </tr><tr class="phase-fail">
+                <td class="step">60</td>
+                <td>R2</td>
+                <td>病例分析（失败）</td>
+                <td><code>tool_result</code></td>
+                <td>tool failed: TOOL_RUNTIME_ERROR</td>
+                <td>38.0s</td>
+                <td>252.7s</td>
+                <td><strong>MessageService + TraceLogger</strong><br/><span style="color:var(--muted)">appendToolResult → 工具输出写入消息链</span></td>
+              </tr><tr class="phase-fail">
+                <td class="step">61</td>
+                <td>R2</td>
+                <td>病例分析（失败）</td>
+                <td><code>failure_recovery</code></td>
+                <td>内部工具执行失败，已输出阶段性整理。</td>
+                <td>900ms</td>
+                <td>253.6s</td>
+                <td><strong>FailureRecovery</strong><br/><span style="color:var(--muted)">生成 stage_report 模板</span></td>
+              </tr><tr class="phase-fail">
+                <td class="step">62</td>
+                <td>R2</td>
+                <td>降级输出</td>
+                <td><code>final_output</code></td>
+                <td>stage_report (TOOL_RUNTIME_ERROR)</td>
+                <td>400ms</td>
+                <td>254.0s</td>
+                <td><strong>SSE 流 → 前端</strong><br/><span style="color:var(--muted)">返回 followup / stage_report 给客户端</span></td>
+              </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>关键状态合并节点（CaseState 字段）</h2>
+      <table>
+        <thead><tr><th>updateReason</th><th>写入字段</th><th>存储</th></tr></thead>
+        <tbody>
+          <tr><td><code>user_message_received</code></td><td>symptoms.userOriginalText += 用户消息</td><td>InMemoryCaseStore (CaseState v++)</td></tr><tr><td><code>symptom_extracted</code></td><td>symptoms.*, userProfile.*（LLM 抽取）</td><td>InMemoryCaseStore</td></tr><tr><td><code>symptom_domain_classified</code></td><td>symptomDomain.primaryDomain / supportedDepth</td><td>InMemoryCaseStore</td></tr><tr><td><code>risk_probe_completed</code></td><td>riskProbe.requiredQuestions / probeStatus</td><td>InMemoryCaseStore</td></tr><tr><td><code>risk_assessed</code></td><td>risk.level / redFlags / matchedRules / reason</td><td>InMemoryCaseStore</td></tr><tr><td><code>decision_ask_user</code></td><td>decisionHistory += ask_user 决策</td><td>InMemoryCaseStore + meta.agentSteps++</td></tr><tr><td><code>asked_questions_recorded</code></td><td>askedQuestions, status=waiting_user, meta.followupRounds++</td><td>InMemoryCaseStore</td></tr><tr><td><code>decision_search_medical</code></td><td>decisionHistory += search_medical</td><td>InMemoryCaseStore + meta.agentSteps++</td></tr><tr><td><code>search_pipeline_completed</code></td><td>evidence[], searchTrace[], meta.searchRounds++</td><td>InMemoryCaseStore</td></tr><tr><td><code>decision_analyze_case</code></td><td>decisionHistory += analyze_case</td><td>InMemoryCaseStore + meta.agentSteps++</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>原始 Trace JSON（嵌入）</h2>
+      <pre id="trace-json"></pre>
+    </section>
+  </main>
+  <script>
+    mermaid.initialize({ startOnLoad: true, theme: 'dark', securityLevel: 'loose' });
+    document.getElementById('trace-json').textContent = "[\n  {\n    \"step\": 0,\n    \"eventType\": \"user_input\",\n    \"reason\": \"\",\n    \"estMs\": 0,\n    \"cumMs\": 0,\n    \"round\": 1,\n    \"phase\": \"预处理（抽取/分域/风险）\",\n    \"storage\": \"MessageService\",\n    \"storageDetail\": \"appendUserMessage → 内存消息历史\"\n  },\n  {\n    \"step\": 1,\n    \"eventType\": \"state_merged\",\n    \"reason\": \"user_message_received\",\n    \"estMs\": 8,\n    \"cumMs\": 8,\n    \"round\": 1,\n    \"phase\": \"预处理（抽取/分域/风险）\",\n    \"storage\": \"CaseState 合并\",\n    \"storageDetail\": \"symptoms.userOriginalText += 用户消息 → InMemoryCaseStore (CaseState v++)\"\n  },\n  {\n    \"step\": 2,\n    \"eventType\": \"tool_use\",\n    \"reason\": \"\",\n    \"estMs\": 1200,\n    \"cumMs\": 1208,\n    \"round\": 1,\n    \"phase\": \"预处理（抽取/分域/风险）\",\n    \"storage\": \"MessageService + TraceLogger\",\n    \"storageDetail\": \"记录工具调用意图\"\n  },\n  {\n    \"step\": 3,\n    \"eventType\": \"tool_result\",\n    \"reason\": \"\",\n    \"estMs\": 4200,\n    \"cumMs\": 5408,\n    \"round\": 1,\n    \"phase\": \"预处理（抽取/分域/风险）\",\n    \"storage\": \"MessageService + TraceLogger\",\n    \"storageDetail\": \"appendToolResult → 工具输出写入消息链\"\n  },\n  {\n    \"step\": 4,\n    \"eventType\": \"state_merged\",\n    \"reason\": \"symptom_extracted\",\n    \"estMs\": 8,\n    \"cumMs\": 5416,\n    \"round\": 1,\n    \"phase\": \"预处理（抽取/分域/风险）\",\n    \"storage\": \"CaseState 合并\",\n    \"storageDetail\": \"symptoms.*, userProfile.*（LLM 抽取） → InMemoryCaseStore\"\n  },\n  {\n    \"step\": 5,\n    \"eventType\": \"symptom_extracted\",\n    \"reason\": \"\",\n    \"estMs\": 0,\n    \"cumMs\": 5416,\n    \"round\": 1,\n    \"phase\": \"预处理（抽取/分域/风险）\",\n    \"storage\": \"TraceLogger\",\n    \"storageDetail\": \"—\"\n  },\n  {\n    \"step\": 6,\n    \"eventType\": \"tool_use\",\n    \"reason\": \"\",\n    \"estMs\": 1200,\n    \"cumMs\": 6616,\n    \"round\": 1,\n    \"phase\": \"预处理（抽取/分域/风险）\",\n    \"storage\": \"MessageService + TraceLogger\",\n    \"storageDetail\": \"记录工具调用意图\"\n  },\n  {\n    \"step\": 7,\n    \"eventType\": \"tool_result\",\n    \"reason\": \"\",\n    \"estMs\": 4200,\n    \"cumMs\": 10816,\n    \"round\": 1,\n    \"phase\": \"预处理（抽取/分域/风险）\",\n    \"storage\": \"MessageService + TraceLogger\",\n    \"storageDetail\": \"appendToolResult → 工具输出写入消息链\"\n  },\n  {\n    \"step\": 8,\n    \"eventType\": \"state_merged\",\n    \"reason\": \"symptom_domain_classified\",\n    \"estMs\": 8,\n    \"cumMs\": 10824,\n    \"round\": 1,\n    \"phase\": \"预处理（抽取/分域/风险）\",\n    \"storage\": \"CaseState 合并\",\n    \"storageDetail\": \"symptomDomain.primaryDomain / supportedDepth → InMemoryCaseStore\"\n  },\n  {\n    \"step\": 9,\n    \"eventType\": \"symptom_domain_classified\",\n    \"reason\": \"\",\n    \"estMs\": 0,\n    \"cumMs\": 10824,\n    \"round\": 1,\n    \"phase\": \"预处理（抽取/分域/风险）\",\n    \"storage\": \"TraceLogger\",\n    \"storageDetail\": \"—\"\n  },\n  {\n    \"step\": 10,\n    \"eventType\": \"tool_use\",\n    \"reason\": \"\",\n    \"estMs\": 1200,\n    \"cumMs\": 12024,\n    \"round\": 1,\n    \"phase\": \"预处理（抽取/分域/风险）\",\n    \"storage\": \"MessageService + TraceLogger\",\n    \"storageDetail\": \"记录工具调用意图\"\n  },\n  {\n    \"step\": 11,\n    \"eventType\": \"tool_result\",\n    \"reason\": \"\",\n    \"estMs\": 4200,\n    \"cumMs\": 16224,\n    \"round\": 1,\n    \"phase\": \"预处理（抽取/分域/风险）\",\n    \"storage\": \"MessageService + TraceLogger\",\n    \"storageDetail\": \"appendToolResult → 工具输出写入消息链\"\n  },\n  {\n    \"step\": 12,\n    \"eventType\": \"state_merged\",\n    \"reason\": \"risk_probe_completed\",\n    \"estMs\": 8,\n    \"cumMs\": 16232,\n    \"round\": 1,\n    \"phase\": \"预处理（抽取/分域/风险）\",\n    \"storage\": \"CaseState 合并\",\n    \"storageDetail\": \"riskProbe.requiredQuestions / probeStatus → InMemoryCaseStore\"\n  },\n  {\n    \"step\": 13,\n    \"eventType\": \"risk_probe\",\n    \"reason\": \"\",\n    \"estMs\": 0,\n    \"cumMs\": 16232,\n    \"round\": 1,\n    \"phase\": \"预处理（抽取/分域/风险）\",\n    \"storage\": \"TraceLogger\",\n    \"storageDetail\": \"—\"\n  },\n  {\n    \"step\": 14,\n    \"eventType\": \"tool_use\",\n    \"reason\": \"\",\n    \"estMs\": 1200,\n    \"cumMs\": 17432,\n    \"round\": 1,\n    \"phase\": \"预处理（抽取/分域/风险）\",\n    \"storage\": \"MessageService + TraceLogger\",\n    \"storageDetail\": \"记录工具调用意图\"\n  },\n  {\n    \"step\": 15,\n    \"eventType\": \"tool_result\",\n    \"reason\": \"\",\n    \"estMs\": 4200,\n    \"cumMs\": 21632,\n    \"round\": 1,\n    \"phase\": \"预处理（抽取/分域/风险）\",\n    \"storage\": \"MessageService + TraceLogger\",\n    \"storageDetail\": \"appendToolResult → 工具输出写入消息链\"\n  },\n  {\n    \"step\": 16,\n    \"eventType\": \"state_merged\",\n    \"reason\": \"risk_assessed\",\n    \"estMs\": 8,\n    \"cumMs\": 21640,\n    \"round\": 1,\n    \"phase\": \"预处理（抽取/分域/风险）\",\n    \"storage\": \"CaseState 合并\",\n    \"storageDetail\": \"risk.level / redFlags / matchedRules / reason → InMemoryCaseStore\"\n  },\n  {\n    \"step\": 17,\n    \"eventType\": \"risk_assessed\",\n    \"reason\": \"\",\n    \"estMs\": 0,\n    \"cumMs\": 21640,\n    \"round\": 1,\n    \"phase\": \"预处理（抽取/分域/风险）\",\n    \"storage\": \"TraceLogger\",\n    \"storageDetail\": \"—\"\n  },\n  {\n    \"step\": 18,\n    \"eventType\": \"agent_decision\",\n    \"reason\": \"\",\n    \"estMs\": 2800,\n    \"cumMs\": 24440,\n    \"round\": 1,\n    \"phase\": \"追问生成\",\n    \"storage\": \"TraceLogger\",\n    \"storageDetail\": \"decideAction LLM/规则 → 下一动作\"\n  },\n  {\n    \"step\": 19,\n    \"eventType\": \"state_merged\",\n    \"reason\": \"decision_ask_user\",\n    \"estMs\": 8,\n    \"cumMs\": 24448,\n    \"round\": 1,\n    \"phase\": \"追问生成\",\n    \"storage\": \"CaseState 合并\",\n    \"storageDetail\": \"decisionHistory += ask_user 决策 → InMemoryCaseStore + meta.agentSteps++\"\n  },\n  {\n    \"step\": 20,\n    \"eventType\": \"tool_use\",\n    \"reason\": \"\",\n    \"estMs\": 1200,\n    \"cumMs\": 25648,\n    \"round\": 1,\n    \"phase\": \"追问生成\",\n    \"storage\": \"MessageService + TraceLogger\",\n    \"storageDetail\": \"记录工具调用意图\"\n  },\n  {\n    \"step\": 21,\n    \"eventType\": \"tool_result\",\n    \"reason\": \"\",\n    \"estMs\": 4200,\n    \"cumMs\": 29848,\n    \"round\": 1,\n    \"phase\": \"追问生成\",\n    \"storage\": \"MessageService + TraceLogger\",\n    \"storageDetail\": \"appendToolResult → 工具输出写入消息链\"\n  },\n  {\n    \"step\": 22,\n    \"eventType\": \"question_guard\",\n    \"reason\": \"\",\n    \"estMs\": 120,\n    \"cumMs\": 29968,\n    \"round\": 1,\n    \"phase\": \"追问生成\",\n    \"storage\": \"TraceLogger\",\n    \"storageDetail\": \"过滤已问过/低价值追问\"\n  },\n  {\n    \"step\": 23,\n    \"eventType\": \"state_merged\",\n    \"reason\": \"asked_questions_recorded\",\n    \"estMs\": 8,\n    \"cumMs\": 29976,\n    \"round\": 1,\n    \"phase\": \"追问生成\",\n    \"storage\": \"CaseState 合并\",\n    \"storageDetail\": \"askedQuestions, status=waiting_user, meta.followupRounds++ → InMemoryCaseStore\"\n  },\n  {\n    \"step\": 24,\n    \"eventType\": \"final_output\",\n    \"reason\": \"followup(differential)\",\n    \"estMs\": 400,\n    \"cumMs\": 30376,\n    \"round\": 1,\n    \"phase\": \"第1轮输出\",\n    \"storage\": \"SSE 流 → 前端\",\n    \"storageDetail\": \"返回 followup / stage_report 给客户端\"\n  },\n  {\n    \"step\": 25,\n    \"eventType\": \"user_input\",\n    \"reason\": \"\",\n    \"estMs\": 0,\n    \"cumMs\": 30376,\n    \"round\": 2,\n    \"phase\": \"第2轮预处理\",\n    \"storage\": \"MessageService\",\n    \"storageDetail\": \"appendUserMessage → 内存消息历史\"\n  },\n  {\n    \"step\": 26,\n    \"eventType\": \"state_merged\",\n    \"reason\": \"user_message_received\",\n    \"estMs\": 8,\n    \"cumMs\": 30384,\n    \"round\": 2,\n    \"phase\": \"第2轮预处理\",\n    \"storage\": \"CaseState 合并\",\n    \"storageDetail\": \"symptoms.userOriginalText += 用户消息 → InMemoryCaseStore (CaseState v++)\"\n  },\n  {\n    \"step\": 27,\n    \"eventType\": \"tool_use\",\n    \"reason\": \"\",\n    \"estMs\": 1200,\n    \"cumMs\": 31584,\n    \"round\": 2,\n    \"phase\": \"第2轮预处理\",\n    \"storage\": \"MessageService + TraceLogger\",\n    \"storageDetail\": \"记录工具调用意图\"\n  },\n  {\n    \"step\": 28,\n    \"eventType\": \"tool_result\",\n    \"reason\": \"\",\n    \"estMs\": 4200,\n    \"cumMs\": 35784,\n    \"round\": 2,\n    \"phase\": \"第2轮预处理\",\n    \"storage\": \"MessageService + TraceLogger\",\n    \"storageDetail\": \"appendToolResult → 工具输出写入消息链\"\n  },\n  {\n    \"step\": 29,\n    \"eventType\": \"state_merged\",\n    \"reason\": \"symptom_extracted\",\n    \"estMs\": 8,\n    \"cumMs\": 35792,\n    \"round\": 2,\n    \"phase\": \"第2轮预处理\",\n    \"storage\": \"CaseState 合并\",\n    \"storageDetail\": \"symptoms.*, userProfile.*（LLM 抽取） → InMemoryCaseStore\"\n  },\n  {\n    \"step\": 30,\n    \"eventType\": \"symptom_extracted\",\n    \"reason\": \"\",\n    \"estMs\": 0,\n    \"cumMs\": 35792,\n    \"round\": 2,\n    \"phase\": \"第2轮预处理\",\n    \"storage\": \"TraceLogger\",\n    \"storageDetail\": \"—\"\n  },\n  {\n    \"step\": 31,\n    \"eventType\": \"tool_use\",\n    \"reason\": \"\",\n    \"estMs\": 1200,\n    \"cumMs\": 36992,\n    \"round\": 2,\n    \"phase\": \"第2轮预处理\",\n    \"storage\": \"MessageService + TraceLogger\",\n    \"storageDetail\": \"记录工具调用意图\"\n  },\n  {\n    \"step\": 32,\n    \"eventType\": \"tool_result\",\n    \"reason\": \"\",\n    \"estMs\": 4200,\n    \"cumMs\": 41192,\n    \"round\": 2,\n    \"phase\": \"第2轮预处理\",\n    \"storage\": \"MessageService + TraceLogger\",\n    \"storageDetail\": \"appendToolResult → 工具输出写入消息链\"\n  },\n  {\n    \"step\": 33,\n    \"eventType\": \"state_merged\",\n    \"reason\": \"symptom_domain_classified\",\n    \"estMs\": 8,\n    \"cumMs\": 41200,\n    \"round\": 2,\n    \"phase\": \"第2轮预处理\",\n    \"storage\": \"CaseState 合并\",\n    \"storageDetail\": \"symptomDomain.primaryDomain / supportedDepth → InMemoryCaseStore\"\n  },\n  {\n    \"step\": 34,\n    \"eventType\": \"symptom_domain_classified\",\n    \"reason\": \"\",\n    \"estMs\": 0,\n    \"cumMs\": 41200,\n    \"round\": 2,\n    \"phase\": \"第2轮预处理\",\n    \"storage\": \"TraceLogger\",\n    \"storageDetail\": \"—\"\n  },\n  {\n    \"step\": 35,\n    \"eventType\": \"tool_use\",\n    \"reason\": \"\",\n    \"estMs\": 1200,\n    \"cumMs\": 42400,\n    \"round\": 2,\n    \"phase\": \"第2轮预处理\",\n    \"storage\": \"MessageService + TraceLogger\",\n    \"storageDetail\": \"记录工具调用意图\"\n  },\n  {\n    \"step\": 36,\n    \"eventType\": \"tool_result\",\n    \"reason\": \"\",\n    \"estMs\": 4200,\n    \"cumMs\": 46600,\n    \"round\": 2,\n    \"phase\": \"第2轮预处理\",\n    \"storage\": \"MessageService + TraceLogger\",\n    \"storageDetail\": \"appendToolResult → 工具输出写入消息链\"\n  },\n  {\n    \"step\": 37,\n    \"eventType\": \"state_merged\",\n    \"reason\": \"risk_probe_completed\",\n    \"estMs\": 8,\n    \"cumMs\": 46608,\n    \"round\": 2,\n    \"phase\": \"第2轮预处理\",\n    \"storage\": \"CaseState 合并\",\n    \"storageDetail\": \"riskProbe.requiredQuestions / probeStatus → InMemoryCaseStore\"\n  },\n  {\n    \"step\": 38,\n    \"eventType\": \"risk_probe\",\n    \"reason\": \"\",\n    \"estMs\": 0,\n    \"cumMs\": 46608,\n    \"round\": 2,\n    \"phase\": \"第2轮预处理\",\n    \"storage\": \"TraceLogger\",\n    \"storageDetail\": \"—\"\n  },\n  {\n    \"step\": 39,\n    \"eventType\": \"tool_use\",\n    \"reason\": \"\",\n    \"estMs\": 1200,\n    \"cumMs\": 47808,\n    \"round\": 2,\n    \"phase\": \"第2轮预处理\",\n    \"storage\": \"MessageService + TraceLogger\",\n    \"storageDetail\": \"记录工具调用意图\"\n  },\n  {\n    \"step\": 40,\n    \"eventType\": \"tool_result\",\n    \"reason\": \"\",\n    \"estMs\": 4200,\n    \"cumMs\": 52008,\n    \"round\": 2,\n    \"phase\": \"第2轮预处理\",\n    \"storage\": \"MessageService + TraceLogger\",\n    \"storageDetail\": \"appendToolResult → 工具输出写入消息链\"\n  },\n  {\n    \"step\": 41,\n    \"eventType\": \"state_merged\",\n    \"reason\": \"risk_assessed\",\n    \"estMs\": 8,\n    \"cumMs\": 52016,\n    \"round\": 2,\n    \"phase\": \"第2轮预处理\",\n    \"storage\": \"CaseState 合并\",\n    \"storageDetail\": \"risk.level / redFlags / matchedRules / reason → InMemoryCaseStore\"\n  },\n  {\n    \"step\": 42,\n    \"eventType\": \"risk_assessed\",\n    \"reason\": \"\",\n    \"estMs\": 0,\n    \"cumMs\": 52016,\n    \"round\": 2,\n    \"phase\": \"第2轮预处理\",\n    \"storage\": \"TraceLogger\",\n    \"storageDetail\": \"—\"\n  },\n  {\n    \"step\": 43,\n    \"eventType\": \"agent_decision\",\n    \"reason\": \"\",\n    \"estMs\": 2800,\n    \"cumMs\": 54816,\n    \"round\": 2,\n    \"phase\": \"第2轮预处理\",\n    \"storage\": \"TraceLogger\",\n    \"storageDetail\": \"decideAction LLM/规则 → 下一动作\"\n  },\n  {\n    \"step\": 44,\n    \"eventType\": \"state_merged\",\n    \"reason\": \"decision_search_medical\",\n    \"estMs\": 8,\n    \"cumMs\": 54824,\n    \"round\": 2,\n    \"phase\": \"联网检索 · 第1轮\",\n    \"storage\": \"CaseState 合并\",\n    \"storageDetail\": \"decisionHistory += search_medical → InMemoryCaseStore + meta.agentSteps++\"\n  },\n  {\n    \"step\": 45,\n    \"eventType\": \"search_queries\",\n    \"reason\": \"\",\n    \"estMs\": 3500,\n    \"cumMs\": 58324,\n    \"round\": 2,\n    \"phase\": \"联网检索 · 第1轮\",\n    \"storage\": \"TraceLogger + CaseState(证据)\",\n    \"storageDetail\": \"Trace 记录检索词（不直接改 CaseState）\"\n  },\n  {\n    \"step\": 46,\n    \"eventType\": \"sources_accepted\",\n    \"reason\": \"\",\n    \"estMs\": 4500,\n    \"cumMs\": 62824,\n    \"round\": 2,\n    \"phase\": \"联网检索 · 第1轮\",\n    \"storage\": \"TraceLogger + CaseState(证据)\",\n    \"storageDetail\": \"白名单过滤后的来源列表（Trace）\"\n  },\n  {\n    \"step\": 47,\n    \"eventType\": \"sources_rejected\",\n    \"reason\": \"\",\n    \"estMs\": 0,\n    \"cumMs\": 62824,\n    \"round\": 2,\n    \"phase\": \"联网检索 · 第1轮\",\n    \"storage\": \"TraceLogger + CaseState(证据)\",\n    \"storageDetail\": \"D级/重复来源（Trace）\"\n  },\n  {\n    \"step\": 48,\n    \"eventType\": \"evidence_extracted\",\n    \"reason\": \"dropped: 0\",\n    \"estMs\": 72000,\n    \"cumMs\": 134824,\n    \"round\": 2,\n    \"phase\": \"联网检索 · 第1轮\",\n    \"storage\": \"TraceLogger + CaseState(证据)\",\n    \"storageDetail\": \"evidence[] 写入 CaseState（抓取+LLM抽取后）\"\n  },\n  {\n    \"step\": 49,\n    \"eventType\": \"state_merged\",\n    \"reason\": \"search_pipeline_completed\",\n    \"estMs\": 8,\n    \"cumMs\": 134832,\n    \"round\": 2,\n    \"phase\": \"联网检索 · 第1轮\",\n    \"storage\": \"CaseState 合并\",\n    \"storageDetail\": \"evidence[], searchTrace[], meta.searchRounds++ → InMemoryCaseStore\"\n  },\n  {\n    \"step\": 50,\n    \"eventType\": \"agent_decision\",\n    \"reason\": \"\",\n    \"estMs\": 2800,\n    \"cumMs\": 137632,\n    \"round\": 2,\n    \"phase\": \"联网检索 · 第2轮\",\n    \"storage\": \"TraceLogger\",\n    \"storageDetail\": \"decideAction LLM/规则 → 下一动作\"\n  },\n  {\n    \"step\": 51,\n    \"eventType\": \"state_merged\",\n    \"reason\": \"decision_search_medical\",\n    \"estMs\": 8,\n    \"cumMs\": 137640,\n    \"round\": 2,\n    \"phase\": \"联网检索 · 第2轮\",\n    \"storage\": \"CaseState 合并\",\n    \"storageDetail\": \"decisionHistory += search_medical → InMemoryCaseStore + meta.agentSteps++\"\n  },\n  {\n    \"step\": 52,\n    \"eventType\": \"search_queries\",\n    \"reason\": \"\",\n    \"estMs\": 3500,\n    \"cumMs\": 141140,\n    \"round\": 2,\n    \"phase\": \"联网检索 · 第2轮\",\n    \"storage\": \"TraceLogger + CaseState(证据)\",\n    \"storageDetail\": \"Trace 记录检索词（不直接改 CaseState）\"\n  },\n  {\n    \"step\": 53,\n    \"eventType\": \"sources_accepted\",\n    \"reason\": \"\",\n    \"estMs\": 4500,\n    \"cumMs\": 145640,\n    \"round\": 2,\n    \"phase\": \"联网检索 · 第2轮\",\n    \"storage\": \"TraceLogger + CaseState(证据)\",\n    \"storageDetail\": \"白名单过滤后的来源列表（Trace）\"\n  },\n  {\n    \"step\": 54,\n    \"eventType\": \"sources_rejected\",\n    \"reason\": \"\",\n    \"estMs\": 0,\n    \"cumMs\": 145640,\n    \"round\": 2,\n    \"phase\": \"联网检索 · 第2轮\",\n    \"storage\": \"TraceLogger + CaseState(证据)\",\n    \"storageDetail\": \"D级/重复来源（Trace）\"\n  },\n  {\n    \"step\": 55,\n    \"eventType\": \"evidence_extracted\",\n    \"reason\": \"dropped: 0\",\n    \"estMs\": 65000,\n    \"cumMs\": 210640,\n    \"round\": 2,\n    \"phase\": \"联网检索 · 第2轮\",\n    \"storage\": \"TraceLogger + CaseState(证据)\",\n    \"storageDetail\": \"evidence[] 写入 CaseState（抓取+LLM抽取后）\"\n  },\n  {\n    \"step\": 56,\n    \"eventType\": \"state_merged\",\n    \"reason\": \"search_pipeline_completed\",\n    \"estMs\": 8,\n    \"cumMs\": 210648,\n    \"round\": 2,\n    \"phase\": \"联网检索 · 第2轮\",\n    \"storage\": \"CaseState 合并\",\n    \"storageDetail\": \"evidence[], searchTrace[], meta.searchRounds++ → InMemoryCaseStore\"\n  },\n  {\n    \"step\": 57,\n    \"eventType\": \"agent_decision\",\n    \"reason\": \"\",\n    \"estMs\": 2800,\n    \"cumMs\": 213448,\n    \"round\": 2,\n    \"phase\": \"病例分析（失败）\",\n    \"storage\": \"TraceLogger\",\n    \"storageDetail\": \"decideAction LLM/规则 → 下一动作\"\n  },\n  {\n    \"step\": 58,\n    \"eventType\": \"state_merged\",\n    \"reason\": \"decision_analyze_case\",\n    \"estMs\": 8,\n    \"cumMs\": 213456,\n    \"round\": 2,\n    \"phase\": \"病例分析（失败）\",\n    \"storage\": \"CaseState 合并\",\n    \"storageDetail\": \"decisionHistory += analyze_case → InMemoryCaseStore + meta.agentSteps++\"\n  },\n  {\n    \"step\": 59,\n    \"eventType\": \"tool_use\",\n    \"reason\": \"\",\n    \"estMs\": 1200,\n    \"cumMs\": 214656,\n    \"round\": 2,\n    \"phase\": \"病例分析（失败）\",\n    \"storage\": \"MessageService + TraceLogger\",\n    \"storageDetail\": \"记录工具调用意图\"\n  },\n  {\n    \"step\": 60,\n    \"eventType\": \"tool_result\",\n    \"reason\": \"tool failed: TOOL_RUNTIME_ERROR\",\n    \"estMs\": 38000,\n    \"cumMs\": 252656,\n    \"round\": 2,\n    \"phase\": \"病例分析（失败）\",\n    \"storage\": \"MessageService + TraceLogger\",\n    \"storageDetail\": \"appendToolResult → 工具输出写入消息链\"\n  },\n  {\n    \"step\": 61,\n    \"eventType\": \"failure_recovery\",\n    \"reason\": \"内部工具执行失败，已输出阶段性整理。\",\n    \"estMs\": 900,\n    \"cumMs\": 253556,\n    \"round\": 2,\n    \"phase\": \"病例分析（失败）\",\n    \"storage\": \"FailureRecovery\",\n    \"storageDetail\": \"生成 stage_report 模板\"\n  },\n  {\n    \"step\": 62,\n    \"eventType\": \"final_output\",\n    \"reason\": \"stage_report (TOOL_RUNTIME_ERROR)\",\n    \"estMs\": 400,\n    \"cumMs\": 253956,\n    \"round\": 2,\n    \"phase\": \"降级输出\",\n    \"storage\": \"SSE 流 → 前端\",\n    \"storageDetail\": \"返回 followup / stage_report 给客户端\"\n  }\n]";
+  </script>
+</body>
+</html>

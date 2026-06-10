@@ -511,11 +511,10 @@ async function executeSearches(queries: string[]) {
 
 ### 10.2 Fallback 行为
 
-- 展示阶段 2 规则结果
-- 页面提示"本次 AI 分析暂不可用，已展示规则分析结果"
-- 检索失败时显示"本次未能完成联网查证"，不生成假链接
-- 咨询记录仍保存，历史记录中标记 `aiStatus: "fallback"`
-- 模型超时或失败时用户不丢失已填写内容
+- Agent 各模块在 LLM 不可用时使用本地确定性降级（症状词典、模板报告、证据直出等）
+- 检索失败时继续分析，并在报告中标注「未经联网核验」
+- 咨询记录仍保存，历史记录中可标记 `aiStatus: "fallback"`
+- 模型超时或失败时用户不丢失已输入的对话内容
 
 ## 11. 代码模块结构
 
@@ -523,39 +522,35 @@ async function executeSearches(queries: string[]) {
 
 ```
 server/
-  index.ts              # Express 入口
+  index.ts              # Express 入口（auth、历史记录、agent consult/stream）
   auth.ts               # 登录注册鉴权
-  rules.ts              # 规则引擎（场景识别、危险判断、结果生成）
-  rules.test.ts         # 规则测试
-  agent.ts              # Agentic Workflow 核心（状态提取、检索路由、追问/报告生成）
-  ai.ts                 # AI Gateway（OpenRouter 调用封装）
-  ai-schema.ts          # AI 输出 JSON Schema / Zod 校验
-  ai-prompt.ts          # Prompt 模板管理
   db.ts                 # Prisma 客户端
-  routes/
-    auth.ts             # /api/auth/*
-    consultations.ts    # /api/consultations/*
+  source-whitelist.ts   # 联网核查来源白名单
+  agent/                # Agent 3.0 全模块
+    index.ts            # 运行时入口
+    agentLoop.ts        # 主循环（抽取→分析→搜索→追问/报告）
+    case/               # CaseState 合并与字段人性化
+    symptoms/           # 症状抽取与域分类
+    risk/               # 红旗规则与风险研判
+    search/             # Firecrawl 检索流水线
+    report/             # 阶段/最终报告渲染
+    llm/                # OpenRouter 客户端与 Prompt
+    agent.v3.test.ts    # Agent 单元测试
 ```
 
 ### 11.2 前端
 
 ```
 src/
-  App.tsx               # 主应用入口
-  components/
-    LandingPage.tsx      # 首页
-    AuthPage.tsx         # 登录/注册
-    ConsultationEntry.tsx # 咨询入口
-    ChatInterface.tsx    # 聊天互动窗口（阶段 3 新增）
-    ResultPage.tsx       # 结果页
-    HistoryList.tsx      # 历史记录
+  App.tsx               # 主应用（对话咨询、SSE 过程、结果页、历史记录）
+  main.tsx              # React 入口
 ```
 
 ## 12. 质量门槛
 
 所有阶段都必须通过以下命令：
 - `npm run test:api` — API 集成测试
-- `npm run test:rules` — 规则场景测试
+- `npm run test:agent` — Agent 3.0 单元测试
 - `npm run typecheck:api` — 类型检查
 - `npm run lint` — 代码规范检查
 - `npm run build` — 构建验证

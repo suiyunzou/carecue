@@ -288,42 +288,45 @@ const tests: TestCase[] = [
     },
   },
   {
-    name: 'registered cookie can start a protected consultation',
+    name: 'registered cookie can call protected agent consult',
     run: async () => {
-      const account = testEmail('protected-start')
-      const registered = await register(account, '保护接口用户')
-      const response = await post('/consultations/start', {
-        chiefComplaint: '最近总是站起来头晕',
+      const account = testEmail('protected-agent')
+      const registered = await register(account, 'Agent 用户')
+      const response = await post('/agent/consult', {
+        message: '最近总是站起来头晕',
       }, registered.cookie)
+      const agentResponse = response.body.response
+      assertJsonObject(agentResponse)
 
       assert.equal(response.status, 200)
-      assert.equal(response.body.scenario, 'dizziness')
-      assert.equal(response.body.scenarioName, '头晕')
+      assert.equal(typeof agentResponse.caseId, 'string')
+      assert.ok(['followup', 'stage_report', 'final_report', 'emergency'].includes(String(agentResponse.type)))
     },
   },
   {
-    name: 'consultation chat returns a recoverable reply after structured answers',
+    name: 'agent consult supports multi-turn follow-up on the same case',
     run: async () => {
-      const account = testEmail('consultation-chat')
-      const registered = await register(account, '聊天用户')
-      const response = await post('/consultations/chat', {
-        chiefComplaint: '咳嗽 2 天，有一点喉咙痒，没有发热',
-        scenario: 'cough',
-        answers: coughAnswers(),
-        chatMessages: [
-          {
-            role: 'user',
-            content: '晚上咳得稍微多一点，还需要补充什么？',
-          },
-        ],
+      const account = testEmail('agent-multiturn')
+      const registered = await register(account, '多轮用户')
+      const first = await post('/agent/consult', {
+        message: '咳嗽 2 天，有一点喉咙痒，没有发热',
       }, registered.cookie)
-      const reply = response.body.reply
-      assertJsonObject(reply)
+      const firstResponse = first.body.response
+      assertJsonObject(firstResponse)
 
-      assert.equal(response.status, 200)
-      assert.equal(typeof reply.message, 'string')
-      assert.ok((reply.message as string).length > 0)
-      assert.ok(['disabled', 'fallback', 'success'].includes(String(reply.aiStatus)))
+      assert.equal(first.status, 200)
+      const caseId = String(firstResponse.caseId)
+
+      const second = await post('/agent/consult', {
+        caseId,
+        message: '晚上咳得稍微多一点',
+      }, registered.cookie)
+      const secondResponse = second.body.response
+      assertJsonObject(secondResponse)
+
+      assert.equal(second.status, 200)
+      assert.equal(String(secondResponse.caseId), caseId)
+      assert.ok(['followup', 'stage_report', 'final_report', 'emergency'].includes(String(secondResponse.type)))
     },
   },
   {
@@ -349,9 +352,8 @@ const tests: TestCase[] = [
     run: async () => {
       const owner = await register(testEmail('record-owner'), '记录所有者')
       const otherUser = await register(testEmail('record-other-user'), '其他用户')
-      const completed = await createDizzinessRecord(owner.cookie)
-      const record = completed.body.record
-      assertRecordObject(record)
+      const ownerUser = responseUser(owner)
+      const record = await createTestConsultationRecord(ownerUser.id as string)
 
       const ownerRead = await get(`/consultations/${record.id}`, owner.cookie)
       const otherRead = await get(`/consultations/${record.id}`, otherUser.cookie)
@@ -359,7 +361,6 @@ const tests: TestCase[] = [
       const ownerDelete = await del(`/consultations/${record.id}`, owner.cookie)
       const ownerReadAfterDelete = await get(`/consultations/${record.id}`, owner.cookie)
 
-      assert.equal(completed.status, 201)
       assert.equal(ownerRead.status, 200)
       assert.equal(otherRead.status, 404)
       assert.equal(otherRead.body.message, '没有找到该咨询记录。')
@@ -423,15 +424,15 @@ async function runProxyCookieContinuitySmoke() {
       displayName: '代理会话用户',
     },
   })
-  const started = await request(`${proxyApiBase}/consultations/start`, {
+  const consulted = await request(`${proxyApiBase}/agent/consult`, {
     cookie: registered.cookie,
     method: 'POST',
-    body: { chiefComplaint: '最近总是站起来头晕' },
+    body: { message: '最近总是站起来头晕' },
   })
 
   assert.equal(registered.status, 201)
-  assert.equal(started.status, 200)
-  assert.equal(started.body.scenario, 'dizziness')
+  assert.equal(consulted.status, 200)
+  assert.equal(typeof consulted.body.response, 'object')
   console.log('PASS proxy cookie continuity smoke')
 }
 
@@ -518,10 +519,10 @@ function assertUserObject(value: unknown): asserts value is JsonObject {
   assert.notEqual(value, null)
 }
 
-function assertRecordObject(value: unknown): asserts value is JsonObject {
-  assert.equal(typeof value, 'object')
-  assert.notEqual(value, null)
-  assert.equal(typeof (value as JsonObject).id, 'string')
+function responseUser(response: TestResponse) {
+  const user = response.body.user
+  assertUserObject(user)
+  return user
 }
 
 function assertJsonObject(value: unknown): asserts value is JsonObject {
@@ -529,78 +530,29 @@ function assertJsonObject(value: unknown): asserts value is JsonObject {
   assert.notEqual(value, null)
 }
 
-async function createDizzinessRecord(cookie: string) {
-  return post('/consultations/complete', {
-    chiefComplaint: '最近总是站起来头晕',
-    scenario: 'dizziness',
-    answers: [
-      {
-        questionKey: 'patient',
-        questionText: '这次不舒服的人是谁？',
-        answerValue: 'self',
-        answerText: '本人',
+async function createTestConsultationRecord(userId: string) {
+  return prisma.consultationRecord.create({
+    data: {
+      userId,
+      chiefComplaint: '最近总是站起来头晕',
+      scenario: 'agent_v3',
+      riskLevel: 'low',
+      result: {
+        create: {
+          riskLevel: 'low',
+          urgencyLevel: 'C',
+          urgencyTitle: '测试记录',
+          urgencyAdvice: '建议观察',
+          possibleDirections: [],
+          departmentSuggestion: '全科',
+          dailyAdvice: [],
+          doctorSummary: '测试摘要',
+          uncertaintyItems: [],
+          aiStatus: 'success',
+        },
       },
-      {
-        questionKey: 'age',
-        questionText: '大概多大年纪？',
-        answerValue: '68 岁',
-        answerText: '68 岁',
-      },
-      {
-        questionKey: 'duration',
-        questionText: '头晕从什么时候开始，持续多久了？',
-        answerValue: 'days',
-        answerText: '1-3 天',
-      },
-      {
-        questionKey: 'dizziness_red_flags',
-        questionText: '有没有下面这些情况？',
-        answerValue: ['none'],
-        answerText: '都没有',
-      },
-      {
-        questionKey: 'severity',
-        questionText: '这次不适程度大概怎样？',
-        answerValue: 'moderate',
-        answerText: '中等，需要休息',
-      },
-    ],
-  }, cookie)
-}
-
-function coughAnswers() {
-  return [
-    {
-      questionKey: 'patient',
-      questionText: '这次不舒服的人是谁？',
-      answerValue: 'self',
-      answerText: '本人',
     },
-    {
-      questionKey: 'age',
-      questionText: '大概多大年纪？',
-      answerValue: '42 岁',
-      answerText: '42 岁',
-    },
-    {
-      questionKey: 'duration',
-      questionText: '咳嗽持续多久了？',
-      answerValue: 'short',
-      answerText: '3 天以内',
-    },
-    {
-      questionKey: 'cough_red_flags',
-      questionText: '有没有这些需要尽快处理的情况？',
-      answerValue: ['none'],
-      answerText: '都没有',
-    },
-    {
-      questionKey: 'sputum',
-      questionText: '有没有痰、发热、咽痛或鼻塞？',
-      answerValue: '喉咙痒，无发热',
-      answerText: '喉咙痒，无发热',
-    },
-  ]
+  })
 }
 
 function testEmail(prefix: string) {

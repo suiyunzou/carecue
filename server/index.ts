@@ -9,15 +9,7 @@ import morgan from 'morgan'
 import { z } from 'zod'
 import { Prisma, PrismaClient } from './generated/prisma/client.ts'
 import { PrismaPg } from '@prisma/adapter-pg'
-import { analyzeConsultationWithAi, chatWithAi } from './ai.ts'
-import {
-  buildResult,
-  getScenario,
-  identifyScenario,
-  scenarios,
-  type ConsultationAnswer,
-  type ScenarioKey,
-} from './rules.ts'
+import { createCareCueAgentRuntime, type AgentResponse, type AgentStreamEvent } from './agent/index.ts'
 
 const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL ?? 'postgresql://carecue:carecue@localhost:5432/carecue?schema=public',
@@ -68,30 +60,6 @@ const loginSchema = z.object({
 
 const registerSchema = loginSchema.extend({
   displayName: z.string().trim().min(1).max(24).optional(),
-})
-
-const answerSchema = z.object({
-  questionKey: z.string(),
-  questionText: z.string(),
-  answerValue: z.union([z.string(), z.array(z.string())]),
-  answerText: z.string(),
-})
-
-const completeConsultationSchema = z.object({
-  chiefComplaint: z.string().trim().min(2),
-  scenario: z.string(), // changed from enum to string to support "general"
-  answers: z.array(answerSchema).optional(), // changed to optional since chat might replace answers
-  chatMessages: z.array(z.object({
-    role: z.enum(['assistant', 'user']),
-    content: z.string().trim().min(1).max(1200),
-  })).max(30).optional(),
-})
-
-const chatConsultationSchema = completeConsultationSchema.extend({
-  chatMessages: z.array(z.object({
-    role: z.enum(['assistant', 'user']),
-    content: z.string().trim().min(1).max(1200),
-  })).min(1).max(30),
 })
 
 app.get('/api/health', (_req, res) => {
@@ -160,133 +128,6 @@ app.get('/api/auth/me', requireAuth, async (req: AuthedRequest, res) => {
   return res.json({ user: publicUser(user) })
 })
 
-app.get('/api/rules/scenarios', requireAuth, (_req, res) => {
-  res.json({
-    scenarios: scenarios.map((scenario) => ({
-      key: scenario.key,
-      name: scenario.name,
-      questions: scenario.questions,
-    })),
-  })
-})
-
-app.post('/api/consultations/start', requireAuth, (req, res) => {
-  const chiefComplaint = z.string().trim().min(2).safeParse(req.body?.chiefComplaint)
-  if (!chiefComplaint.success) {
-    return res.status(400).json({ message: '请先简单描述哪里不舒服。' })
-  }
-
-  const scenario = identifyScenario(chiefComplaint.data)
-  return res.json({
-    scenario: scenario.key,
-    scenarioName: scenario.name,
-    questions: scenario.questions,
-  })
-})
-
-app.post('/api/consultations/chat', requireAuth, async (req, res) => {
-  const parsed = chatConsultationSchema.safeParse(req.body)
-  if (!parsed.success) {
-    return res.status(400).json({ message: '聊天信息格式不正确。' })
-  }
-
-  const payload = parsed.data
-  const scenario = getScenario(payload.scenario)
-  if (!scenario) {
-    return res.status(400).json({ message: '暂不支持该咨询场景。' })
-  }
-
-  const answers = payload.answers || []
-
-  const ruleResult = buildResult(
-    payload.chiefComplaint,
-    payload.scenario as ScenarioKey,
-    answers as ConsultationAnswer[],
-  )
-  const reply = await chatWithAi({
-    answers: answers as ConsultationAnswer[],
-    chatMessages: payload.chatMessages,
-    chiefComplaint: payload.chiefComplaint,
-    ruleResult,
-    scenario: payload.scenario as ScenarioKey,
-  })
-
-  return res.json({ reply })
-})
-
-app.post('/api/consultations/complete', requireAuth, async (req: AuthedRequest, res) => {
-  const parsed = completeConsultationSchema.safeParse(req.body)
-  if (!parsed.success) {
-    return res.status(400).json({ message: '咨询信息校验失败，请检查提交内容。' })
-  }
-
-  const payload = parsed.data
-  const scenario = getScenario(payload.scenario)
-  if (!scenario) {
-    return res.status(400).json({ message: '暂不支持该咨询场景。' })
-  }
-
-  const answers = payload.answers || []
-
-  const ruleResult = buildResult(
-    payload.chiefComplaint,
-    payload.scenario as ScenarioKey,
-    answers as ConsultationAnswer[],
-  )
-  const result = await analyzeConsultationWithAi({
-    answers: answers as ConsultationAnswer[],
-    chatMessages: payload.chatMessages,
-    chiefComplaint: payload.chiefComplaint,
-    ruleResult,
-    scenario: payload.scenario as ScenarioKey,
-  })
-
-  const record = await prisma.$transaction(async (tx) => {
-    const createdRecord = await tx.consultationRecord.create({
-      data: {
-        userId: req.userId!,
-        chiefComplaint: payload.chiefComplaint,
-        scenario: payload.scenario,
-        riskLevel: result.riskLevel,
-        answers: {
-          create: answers.map((answer) => ({
-            questionKey: answer.questionKey,
-            questionText: answer.questionText,
-            answerValue: answer.answerValue,
-            answerText: answer.answerText,
-          })),
-        },
-        result: {
-          create: {
-            riskLevel: result.riskLevel,
-            urgencyLevel: result.urgencyLevel,
-            urgencyTitle: result.urgencyTitle,
-            urgencyAdvice: result.urgencyAdvice,
-            possibleDirections: result.possibleDirections,
-            departmentSuggestion: result.departmentSuggestion,
-            dailyAdvice: result.dailyAdvice,
-            doctorSummary: result.doctorSummary,
-            uncertaintyItems: result.uncertaintyItems,
-            aiStatus: result.aiStatus,
-            aiModel: result.aiModel,
-            aiSummary: result.aiSummary,
-            missingInformation: result.missingInformation,
-            nextSteps: result.nextSteps,
-            safetyFlags: result.safetyFlags,
-            sourceReferences: result.sourceReferences,
-            webSearchUsed: result.webSearchUsed,
-          },
-        },
-      },
-      include: consultationInclude,
-    })
-
-    return createdRecord
-  })
-
-  return res.status(201).json({ record: serializeRecord(record), result })
-})
-
 app.get('/api/consultations', requireAuth, async (req: AuthedRequest, res) => {
   const records = await prisma.consultationRecord.findMany({
     where: { userId: req.userId },
@@ -334,6 +175,173 @@ app.delete('/api/consultations/:id', requireAuth, async (req: AuthedRequest, res
 
   await prisma.consultationRecord.delete({ where: { id: record.id } })
   return res.json({ ok: true })
+})
+
+// ==========================================
+// CareCue Agent v3.0 — CaseState 驱动的工具主循环
+// ==========================================
+
+const agentRuntime = createCareCueAgentRuntime()
+
+const agentConsultSchema = z.object({
+  caseId: z.string().uuid().optional(),
+  message: z.string().trim().min(2).max(2000),
+})
+
+app.post('/api/agent/consult', requireAuth, async (req: AuthedRequest, res) => {
+  const parsed = agentConsultSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ message: '请先简单描述哪里不舒服（2-2000 字）。' })
+  }
+
+  try {
+    const response = await agentRuntime.run({
+      caseId: parsed.data.caseId,
+      userId: req.userId,
+      userMessage: parsed.data.message,
+    })
+
+    // 最终报告 / 急症提醒落库，供历史记录页查看
+    let record: ReturnType<typeof serializeRecord> | undefined
+    if (response.type === 'final_report' || response.type === 'emergency') {
+      try {
+        record = await persistAgentOutcome(req.userId!, response)
+      } catch (error) {
+        console.error('[Agent] persist consultation record failed', error)
+      }
+    }
+
+    return res.json({ response, record })
+  } catch (error) {
+    console.error('[Agent] consult failed', error)
+    return res.status(500).json({ message: '分析服务暂时不可用，请稍后重试。' })
+  }
+})
+
+// SSE 流式咨询：推送可审计分析过程（状态/已提取信息/风险核查/检索词/来源），最后推送 final
+app.post('/api/agent/consult/stream', requireAuth, async (req: AuthedRequest, res) => {
+  const parsed = agentConsultSchema.safeParse(req.body)
+  if (!parsed.success) {
+    return res.status(400).json({ message: '请先简单描述哪里不舒服（2-2000 字）。' })
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
+  res.setHeader('Cache-Control', 'no-cache, no-transform')
+  res.setHeader('Connection', 'keep-alive')
+  res.flushHeaders()
+
+  const send = (event: AgentStreamEvent) => {
+    res.write(`data: ${JSON.stringify(event)}\n\n`)
+  }
+
+  try {
+    const response = await agentRuntime.run({
+      caseId: parsed.data.caseId,
+      userId: req.userId,
+      userMessage: parsed.data.message,
+      onEvent: send,
+    })
+
+    let record: ReturnType<typeof serializeRecord> | undefined
+    if (response.type === 'final_report' || response.type === 'emergency') {
+      try {
+        record = await persistAgentOutcome(req.userId!, response)
+      } catch (error) {
+        console.error('[Agent] persist consultation record failed', error)
+      }
+    }
+
+    res.write(`data: ${JSON.stringify({ type: 'final', response, record })}\n\n`)
+  } catch (error) {
+    console.error('[Agent] consult stream failed', error)
+    send({ type: 'error', message: '分析服务暂时不可用，请稍后重试。' })
+  } finally {
+    res.end()
+  }
+})
+
+const AGENT_RISK_TO_LEGACY: Record<string, { riskLevel: string; urgencyLevel: string; urgencyTitle: string }> = {
+  R3: { riskLevel: 'high', urgencyLevel: 'A', urgencyTitle: '建议立即就医或联系急救' },
+  R2: { riskLevel: 'medium', urgencyLevel: 'B', urgencyTitle: '建议尽快就医检查' },
+  R1: { riskLevel: 'low', urgencyLevel: 'C', urgencyTitle: '建议择期就诊，先观察' },
+  R0: { riskLevel: 'low', urgencyLevel: 'D', urgencyTitle: '暂未发现明显危险信号' },
+}
+
+async function persistAgentOutcome(userId: string, response: AgentResponse) {
+  const legacy = AGENT_RISK_TO_LEGACY[response.riskLevel] ?? AGENT_RISK_TO_LEGACY.R1
+  const chiefComplaint = response.stateSnapshot.chiefComplaint || '健康咨询'
+
+  const resultData =
+    response.type === 'final_report'
+      ? {
+          riskLevel: legacy.riskLevel,
+          urgencyLevel: legacy.urgencyLevel,
+          urgencyTitle: legacy.urgencyTitle,
+          urgencyAdvice: response.report.riskReason,
+          possibleDirections: response.report.hypotheses.map((h) => ({
+            title: h.name,
+            support: h.supportEvidence,
+            caution: [...h.againstEvidence, ...h.uncertainties],
+          })),
+          departmentSuggestion: response.report.departmentSuggestion,
+          dailyAdvice: response.report.selfCareAdvice,
+          doctorSummary: response.report.doctorSummary,
+          uncertaintyItems: [response.report.uncertaintyNote],
+          aiStatus: 'success',
+          aiSummary: response.report.currentConclusion,
+          missingInformation: response.report.unresolvedRedFlags,
+          nextSteps: response.report.seekCareWhen,
+          safetyFlags: response.report.avoidActions,
+          sourceReferences: response.report.references,
+          webSearchUsed: response.report.references.length > 0,
+        }
+      : {
+          riskLevel: 'high',
+          urgencyLevel: 'A',
+          urgencyTitle: '建议立即就医或联系急救',
+          urgencyAdvice: response.type === 'emergency' ? response.content : '',
+          possibleDirections: [],
+          departmentSuggestion: '急诊科',
+          dailyAdvice: [],
+          doctorSummary: response.type === 'emergency' ? response.doctorSummary : '',
+          uncertaintyItems: [],
+          aiStatus: 'success',
+          aiSummary: response.type === 'emergency' ? response.content : '',
+          missingInformation: [],
+          nextSteps: [],
+          safetyFlags: response.type === 'emergency' ? response.triggeredCombination : [],
+          sourceReferences: [],
+          webSearchUsed: false,
+        }
+
+  const record = await prisma.consultationRecord.create({
+    data: {
+      userId,
+      chiefComplaint,
+      scenario: 'agent_v3',
+      riskLevel: response.type === 'emergency' ? 'high' : legacy.riskLevel,
+      result: { create: resultData },
+    },
+    include: consultationInclude,
+  })
+
+  return serializeRecord(record)
+}
+
+// 调试面板数据（§34.2）：CaseState / Trace / MessageHistory
+app.get('/api/agent/cases/:caseId/debug', requireAuth, async (req: AuthedRequest, res) => {
+  if (process.env.NODE_ENV === 'production' && process.env.AGENT_DEBUG_PANEL !== 'true') {
+    return res.status(404).json({ message: 'Not found.' })
+  }
+  const caseId = paramAsString(req.params.caseId)
+  if (!caseId) {
+    return res.status(400).json({ message: '缺少 caseId。' })
+  }
+  const debug = await agentRuntime.getDebugInfo(caseId)
+  if (!debug.state) {
+    return res.status(404).json({ message: '没有找到该病例。' })
+  }
+  return res.json(debug)
 })
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

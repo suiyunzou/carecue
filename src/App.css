@@ -1091,6 +1091,127 @@ textarea {
   gap: 6px;
 }
 
+.prewrap {
+  white-space: pre-wrap;
+}
+
+.followup-question-list {
+  margin: 12px 0 0;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+
+.chat-card.emergency-card {
+  border-color: #f3b3ab;
+  background: #fff7f5;
+}
+
+.chat-card.emergency-card .card-icon {
+  background: #c2362b;
+  color: #fff;
+}
+
+.chat-card.emergency-card .card-content h3 {
+  color: #c2362b;
+}
+
+/* 可审计分析过程（折叠） */
+.process-disclosure {
+  margin: 0 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f7fbfa;
+  font-size: 13px;
+}
+
+.process-disclosure summary {
+  padding: 8px 12px;
+  cursor: pointer;
+  color: var(--muted-ink);
+  font-weight: 600;
+  user-select: none;
+}
+
+.process-disclosure ul {
+  margin: 0;
+  padding: 0 14px 10px 30px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--muted-ink);
+  line-height: 1.5;
+}
+
+/* 流式分析中：实时过程 */
+.live-process-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--muted-ink);
+}
+
+.live-process-list li.active {
+  color: #08766f;
+  font-weight: 600;
+}
+
+/* 侧栏：已确认的信息 */
+.known-facts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.known-fact-row {
+  display: flex;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.known-fact-row .fact-label {
+  flex-shrink: 0;
+  min-width: 62px;
+  color: var(--muted-ink);
+}
+
+.known-fact-row .fact-value {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* 侧栏：检索词 chips */
+.search-query-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.query-chip {
+  padding: 4px 10px;
+  border-radius: 99px;
+  background: #eef8f6;
+  color: #08766f;
+  font-size: 12px;
+}
+
+.search-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted-ink);
+  line-height: 1.5;
+}
+
 .compact-source-list a {
   padding: 8px 10px;
   font-size: 13px;
