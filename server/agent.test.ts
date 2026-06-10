@@ -165,8 +165,10 @@ const mockFinalAdvice = {
   generalJudgment: ['可能方向1'],
   judgmentBasis: '依据1',
   howToHandleNow: ['休息'],
+  medicationInfo: null,
   whenToSeeDoctor: ['加重就医'],
-  needsMoreInfo: false
+  needsMoreInfo: false,
+  followUpQuestion: null
 };
 
 const tests: TestCase[] = [
@@ -174,15 +176,15 @@ const tests: TestCase[] = [
     name: 'Workflow Branch 1: Urgency Level A bypasses question and search',
     run: async () => {
       setupFetchMock({
-        'symptoms_extraction': mockSymptoms,
-        'final_advice_generation': mockFinalAdvice
+        'symptoms_extraction': mockSymptoms
       });
       
       const input = { ...baseAiInput, ruleResult: { ...baseAiInput.ruleResult, urgencyLevel: 'A' } as RuleResult };
       const result = await runAgentWorkflow(input);
       
       assert.equal(result.decision.type, 'generate_report');
-      assert.deepEqual(result.decision.report, mockFinalAdvice);
+      assert.ok(result.decision.report.generalJudgment[0].includes('急症风险'));
+      assert.equal(result.decision.report.needsMoreInfo, false);
       assert.equal(result.searchResults.length, 0);
     }
   },

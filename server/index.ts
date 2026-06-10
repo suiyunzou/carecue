@@ -249,7 +249,7 @@ app.post('/api/consultations/complete', requireAuth, async (req: AuthedRequest, 
         scenario: payload.scenario,
         riskLevel: result.riskLevel,
         answers: {
-          create: payload.answers.map((answer) => ({
+          create: answers.map((answer) => ({
             questionKey: answer.questionKey,
             questionText: answer.questionText,
             answerValue: answer.answerValue,

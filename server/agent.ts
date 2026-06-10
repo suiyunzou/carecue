@@ -118,8 +118,29 @@ export async function extractSymptoms(input: AiAgentStateInput): Promise<Symptom
 当前用户主诉：${input.chiefComplaint}
 请基于以上信息及后续对话历史进行提取。`
 
+  const structuredContext = {
+    chiefComplaint: input.chiefComplaint,
+    scenario: input.scenario,
+    ruleResult: {
+      urgencyLevel: input.ruleResult.urgencyLevel,
+      urgencyTitle: input.ruleResult.urgencyTitle,
+      urgencyAdvice: input.ruleResult.urgencyAdvice,
+      departmentSuggestion: input.ruleResult.departmentSuggestion,
+    },
+    answers: input.answers.map((answer) => ({
+      questionKey: answer.questionKey,
+      questionText: answer.questionText,
+      answerText: answer.answerText || '未说明',
+      answerValue: answer.answerValue,
+    })),
+  }
+
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
     { role: 'system', content: systemPrompt },
+    {
+      role: 'user',
+      content: `以下是用户已经完成的结构化问卷资料，必须纳入提取结果：\n${JSON.stringify(structuredContext)}`,
+    },
     ...input.chatMessages.map((msg): OpenAI.Chat.ChatCompletionMessageParam => ({
       role: msg.role,
       content: msg.content
@@ -127,7 +148,7 @@ export async function extractSymptoms(input: AiAgentStateInput): Promise<Symptom
   ]
 
   console.log('\n--- [Agent Prompt] 1. Extract Symptoms ---')
-  console.log(`[Agent Input] User Complaint: ${input.chiefComplaint}, Chat History Length: ${input.chatMessages.length}`)
+  console.log(`[Agent Input] User Complaint: ${input.chiefComplaint}, Answers: ${input.answers.length}, Chat History Length: ${input.chatMessages.length}`)
 
   const completion = await openai.chat.completions.create({
     model: process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v4-pro',
@@ -143,7 +164,7 @@ export async function extractSymptoms(input: AiAgentStateInput): Promise<Symptom
 
   console.log('[Agent Output] Extracted Symptoms JSON:\n', rawContent)
   console.log('--------------------------------------------\n')
-  return JSON.parse(rawContent) as SymptomsExtraction
+  return SymptomsExtractionSchema.parse(JSON.parse(rawContent))
 }
 
 export async function generateQuestion(symptoms: SymptomsExtraction, round: number, chatMessages: AiChatMessage[] = []): Promise<QuestionGeneration> {
@@ -197,7 +218,7 @@ export async function generateQuestion(symptoms: SymptomsExtraction, round: numb
 
   console.log('[Agent Output] Generated Question JSON:\n', rawContent)
   console.log('--------------------------------------------\n')
-  return JSON.parse(rawContent) as QuestionGeneration
+  return QuestionGenerationSchema.parse(JSON.parse(rawContent))
 }
 
 export async function generateSearchTask(symptoms: SymptomsExtraction): Promise<SearchTaskGeneration> {
@@ -207,7 +228,9 @@ export async function generateSearchTask(symptoms: SymptomsExtraction): Promise<
 你不能生成确诊类搜索、处方药推荐搜索、偏方搜索或“能不能不去医院”类搜索。
 你不能直接照抄用户原话。
 
-即使当前症状信息仍然不足，只要用户提供了初步症状（如：头晕、胸痛、肚子痛等），你也应该生成用于探索性排查的检索任务，以便为最终报告提供参考依据。
+只有当基础信息已经基本够用，或系统已达到追问轮次上限时，才生成检索任务。
+如果主诉完全不清楚、症状为空、只是在问“我是什么病”但没有任何具体症状，应返回空 tasks。
+不要为了凑证据生成探索性检索任务。
 
 允许的检索意图：
 1. 高危信号核验；2. 可能疾病方向核验；3. 轻重程度判断；4. 日常处理建议；5. 非处方药信息说明；6. 就医边界核验；7. 就医沟通建议。
@@ -234,10 +257,44 @@ export async function generateSearchTask(symptoms: SymptomsExtraction): Promise<
 
   console.log('[Agent Output] Generated Search Task JSON:\n', rawContent)
   console.log('--------------------------------------------\n')
-  return JSON.parse(rawContent) as SearchTaskGeneration
+  return SearchTaskGenerationSchema.parse(JSON.parse(rawContent))
 }
 
-export async function generateFinalAdvice(symptoms: SymptomsExtraction, ruleResult: RuleResult, searchResults: Record<string, unknown>[]): Promise<FinalAdviceGeneration> {
+export type SearchResultItem = {
+  metadata?: {
+    title?: string
+    sourceURL?: string
+  }
+  markdown?: string
+  title?: string
+  url?: string
+  snippet?: string
+}
+
+export function buildEmergencyFinalAdvice(symptoms: SymptomsExtraction, ruleResult: RuleResult): FinalAdviceGeneration {
+  const symptomText = symptoms.knownInfo.mainSymptoms.length > 0
+    ? symptoms.knownInfo.mainSymptoms.join('、')
+    : '当前不适'
+
+  return {
+    generalJudgment: ['当前需要优先排查急症风险'],
+    judgmentBasis: `规则判断为 ${ruleResult.urgencyLevel} 级：${ruleResult.urgencyTitle}。已知症状包括：${symptomText}。线上信息不能判断具体疾病，也不应替代急诊评估。`,
+    howToHandleNow: [
+      ruleResult.urgencyAdvice,
+      '停止剧烈活动，尽量由家人陪同前往线下急诊或联系当地急救。',
+      '保留发作时间、持续多久、伴随症状、既往病史和正在用药信息，方便医生快速判断。',
+    ],
+    medicationInfo: null,
+    whenToSeeDoctor: [
+      ruleResult.urgencyAdvice,
+      '如出现呼吸困难、胸痛加重、意识异常、肢体无力、说话不清、大量出血等情况，应立即急诊。',
+    ],
+    needsMoreInfo: false,
+    followUpQuestion: null,
+  }
+}
+
+export async function generateFinalAdvice(symptoms: SymptomsExtraction, ruleResult: RuleResult, searchResults: SearchResultItem[]): Promise<FinalAdviceGeneration> {
   const systemPrompt = `你是“问康”的最终建议生成助手。
 
 你的任务是根据用户症状、追问信息、规则判断和证据核验结果，生成普通用户能理解的建议。
@@ -248,7 +305,7 @@ export async function generateFinalAdvice(symptoms: SymptomsExtraction, ruleResu
 规则判断紧急程度：${ruleResult.urgencyLevel} - ${ruleResult.urgencyTitle}
 
 当前提取的已知症状：${JSON.stringify(symptoms.knownInfo)}
-联网核验证据：${JSON.stringify(searchResults.map(r => ({ title: r.metadata?.title, markdown: r.markdown?.substring(0, 300) })))}
+联网核验证据：${JSON.stringify(searchResults.map(r => ({ title: r.metadata?.title || r.title, url: r.metadata?.sourceURL || r.url, markdown: r.markdown?.substring(0, 300) || r.snippet?.substring(0, 300) })))}
 
 请回答用户最关心的五件事（必须提供实质性内容，不能全部回答“暂无建议”或“无法判断”）：
 1. 大概可能是什么方向（不超过3个，说明更像哪些方向，不说“你就是某病”）；
@@ -278,7 +335,7 @@ export async function generateFinalAdvice(symptoms: SymptomsExtraction, ruleResu
 
   console.log('[Agent Output] Generated Final Advice JSON:\n', rawContent)
   console.log('--------------------------------------------\n')
-  return JSON.parse(rawContent) as FinalAdviceGeneration
+  return FinalAdviceGenerationSchema.parse(JSON.parse(rawContent))
 }
 
 export type SearchTask = {
@@ -286,7 +343,7 @@ export type SearchTask = {
   sourceLevel: string
 }
 
-export async function executeSearches(tasks: SearchTask[]) {
+export async function executeSearches(tasks: SearchTask[]): Promise<SearchResultItem[]> {
   if (!tasks || tasks.length === 0) return []
 
   const searchPromises = tasks.map((task) => {
@@ -333,7 +390,7 @@ export async function runAgentWorkflow(input: AiAgentStateInput) {
   // 步骤 2 & 3：高危规则判断与通用槽位检查
   // 如果命中高危 (A级)，直接停止追问和猜测，生成报告
   if (input.ruleResult.urgencyLevel === 'A') {
-    const finalAdvice = await generateFinalAdvice(symptoms, input.ruleResult, [])
+    const finalAdvice = buildEmergencyFinalAdvice(symptoms, input.ruleResult)
     return {
       symptoms,
       searchResults: [],
@@ -380,7 +437,7 @@ export async function runAgentWorkflow(input: AiAgentStateInput) {
 
   return {
     symptoms,
-    searchResults: searchResults.map(r => ({ title: r.metadata?.title, url: r.metadata?.sourceURL })),
+    searchResults: searchResults.map(r => ({ title: r.metadata?.title || r.title || '参考资料', url: r.metadata?.sourceURL || r.url || '' })),
     decision: {
       type: 'generate_report' as const,
       report: finalAdvice
@@ -441,6 +498,6 @@ export async function generateDrugInfo(drugName: string, symptomsContext: string
   }
 
   console.log('[Agent Output] Generated Drug Info JSON:\n', rawContent)
-  return JSON.parse(rawContent) as DrugInfo
+  return DrugInfoSchema.parse(JSON.parse(rawContent))
 }
 

@@ -147,7 +147,7 @@ export const openRouterResponseJsonSchema = {
   },
 }
 
-const forbiddenMedicalClaimPattern = /(确诊为|可以确诊|已经确诊|一定是|肯定是|绝对是|包治|自行停药|换药)/
+const forbiddenMedicalClaimPattern = /(确诊为|可以确诊|已经确诊|诊断为|一定是|肯定是|绝对是|排除.{0,12}(严重|急症|心梗|脑卒中|中风|癌|肿瘤)|保证没事|放心没事|不用就医|无需就医|医生错了|不要去医院|(建议|可以|自行).{0,6}(停药|换药)|(推荐|使用|服用|购买).{0,8}(处方药|抗生素|激素)|(处方药|抗生素|激素).{0,8}(推荐|使用|服用)|每次\s*\d+|\d+\s*(mg|g|ml|片|粒|袋|次\/日)|包治|治愈)/
 
 export function assertAiOutputIsSafe(output: AiAnalysisOutput) {
   const joined = [
