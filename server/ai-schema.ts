@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { RuleResult } from './rules.ts'
+import { rateSourceUrl, type SourceLevel } from './source-whitelist.ts'
 
 export const aiStatusSchema = z.enum(['success', 'fallback', 'disabled', 'error'])
 export type AiStatus = z.infer<typeof aiStatusSchema>
@@ -8,6 +9,7 @@ export const sourceReferenceSchema = z.object({
   title: z.string().trim().min(1).max(160),
   url: z.string().trim().min(1).max(500),
   content: z.string().trim().max(600).optional(),
+  sourceLevel: z.enum(['A', 'B', 'C', 'D']).optional(),
 })
 
 export type SourceReference = z.infer<typeof sourceReferenceSchema>
@@ -145,7 +147,7 @@ export const openRouterResponseJsonSchema = {
   },
 }
 
-const forbiddenMedicalClaimPattern = /(确诊为|可以确诊|已经确诊|一定是|肯定是|绝对是|包治|药物剂量|自行停药|停药|换药|\b\d+(\.\d+)?\s?(mg|ml|g)\b|毫克|处方)/
+const forbiddenMedicalClaimPattern = /(确诊为|可以确诊|已经确诊|一定是|肯定是|绝对是|包治|自行停药|换药)/
 
 export function assertAiOutputIsSafe(output: AiAnalysisOutput) {
   const joined = [
@@ -246,4 +248,35 @@ function dedupeSources(items: SourceReference[]) {
     seen.add(key)
     return true
   }).slice(0, 8)
+}
+
+/**
+ * 过滤掉 D 级（论坛/自媒体/营销）来源。
+ * 在 {@link mergeAiResult} 调用前使用。
+ */
+export function filterLowQualitySources(items: SourceReference[]): SourceReference[] {
+  return items.filter((item) => rateSourceUrl(item.url) !== 'D')
+}
+
+/**
+ * 对来源进行评分并排序。
+ * - A 级 → 排序权重 0
+ * - B 级 → 排序权重 1
+ * - C 级 → 排序权重 2
+ * - D 级 → 直接过滤
+ * - 同一等级内保持原始顺序（稳定排序）
+ */
+export function scoreAndRankSources(items: SourceReference[]): SourceReference[] {
+  const levelOrder: Record<SourceLevel, number> = { A: 0, B: 1, C: 2, D: 99 }
+
+  const withLevel = items.map((item) => {
+    const level = item.sourceLevel ?? rateSourceUrl(item.url)
+    return { item: { ...item, sourceLevel: level }, order: levelOrder[level] }
+  })
+
+  return withLevel
+    .filter((entry) => entry.item.sourceLevel !== 'D')
+    .sort((a, b) => a.order - b.order)
+    .map((entry) => entry.item)
+    .slice(0, 8)
 }

@@ -71,6 +71,7 @@ type SourceReference = {
   title: string
   url: string
   content?: string
+  sourceLevel?: 'A' | 'B' | 'C' | 'D'
 }
 
 type Result = {
@@ -888,6 +889,11 @@ function ChatView({
                   <div className="source-list compact-source-list">
                     {item.sourceReferences.map((source) => (
                       <a href={source.url} key={source.url} rel="noreferrer" target="_blank">
+                        {source.sourceLevel ? (
+                          <span className={`source-level-badge level-${source.sourceLevel.toLowerCase()}`}>
+                            {source.sourceLevel} 级
+                          </span>
+                        ) : null}
                         {source.title}
                       </a>
                     ))}
@@ -1086,6 +1092,11 @@ function ResultView({
           <div className="source-list">
             {sourceReferences.map((source) => (
               <a href={source.url} key={source.url} rel="noreferrer" target="_blank">
+                {source.sourceLevel ? (
+                  <span className={`source-level-badge level-${source.sourceLevel.toLowerCase()}`}>
+                    {source.sourceLevel} 级
+                  </span>
+                ) : null}
                 <strong>{source.title}</strong>
                 {source.content ? <span>{source.content}</span> : null}
               </a>

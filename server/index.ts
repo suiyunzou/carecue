@@ -79,8 +79,8 @@ const answerSchema = z.object({
 
 const completeConsultationSchema = z.object({
   chiefComplaint: z.string().trim().min(2),
-  scenario: z.enum(['dizziness', 'chestPain', 'cough']),
-  answers: z.array(answerSchema).min(1),
+  scenario: z.string(), // changed from enum to string to support "general"
+  answers: z.array(answerSchema).optional(), // changed to optional since chat might replace answers
   chatMessages: z.array(z.object({
     role: z.enum(['assistant', 'user']),
     content: z.string().trim().min(1).max(1200),
@@ -187,7 +187,7 @@ app.post('/api/consultations/start', requireAuth, (req, res) => {
 app.post('/api/consultations/chat', requireAuth, async (req, res) => {
   const parsed = chatConsultationSchema.safeParse(req.body)
   if (!parsed.success) {
-    return res.status(400).json({ message: '聊天信息不完整，请先完成基础追问。' })
+    return res.status(400).json({ message: '聊天信息格式不正确。' })
   }
 
   const payload = parsed.data
@@ -196,13 +196,15 @@ app.post('/api/consultations/chat', requireAuth, async (req, res) => {
     return res.status(400).json({ message: '暂不支持该咨询场景。' })
   }
 
+  const answers = payload.answers || []
+
   const ruleResult = buildResult(
     payload.chiefComplaint,
     payload.scenario as ScenarioKey,
-    payload.answers as ConsultationAnswer[],
+    answers as ConsultationAnswer[],
   )
   const reply = await chatWithAi({
-    answers: payload.answers as ConsultationAnswer[],
+    answers: answers as ConsultationAnswer[],
     chatMessages: payload.chatMessages,
     chiefComplaint: payload.chiefComplaint,
     ruleResult,
@@ -215,7 +217,7 @@ app.post('/api/consultations/chat', requireAuth, async (req, res) => {
 app.post('/api/consultations/complete', requireAuth, async (req: AuthedRequest, res) => {
   const parsed = completeConsultationSchema.safeParse(req.body)
   if (!parsed.success) {
-    return res.status(400).json({ message: '咨询信息不完整，请补齐关键问题。' })
+    return res.status(400).json({ message: '咨询信息校验失败，请检查提交内容。' })
   }
 
   const payload = parsed.data
@@ -224,13 +226,15 @@ app.post('/api/consultations/complete', requireAuth, async (req: AuthedRequest, 
     return res.status(400).json({ message: '暂不支持该咨询场景。' })
   }
 
+  const answers = payload.answers || []
+
   const ruleResult = buildResult(
     payload.chiefComplaint,
     payload.scenario as ScenarioKey,
-    payload.answers as ConsultationAnswer[],
+    answers as ConsultationAnswer[],
   )
   const result = await analyzeConsultationWithAi({
-    answers: payload.answers as ConsultationAnswer[],
+    answers: answers as ConsultationAnswer[],
     chatMessages: payload.chatMessages,
     chiefComplaint: payload.chiefComplaint,
     ruleResult,
