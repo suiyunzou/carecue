@@ -1,4 +1,5 @@
 .app-shell {
+  --topbar-height: 56px;
   min-height: 100vh;
   color: var(--body);
   background:
@@ -13,7 +14,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 72px;
+  min-height: var(--topbar-height);
   padding: 0 clamp(18px, 5vw, 72px);
   background: rgba(248, 251, 250, 0.94);
   border-bottom: 1px solid var(--line);
@@ -31,7 +32,7 @@
 }
 
 .brand-button {
-  gap: 12px;
+  gap: 10px;
   padding: 0;
   color: var(--ink);
   background: transparent;
@@ -42,12 +43,12 @@
 .brand-mark {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   color: #fff;
   background: #08766f;
-  border-radius: 8px;
-  box-shadow: 0 14px 34px rgba(8, 118, 111, 0.22);
+  border-radius: 7px;
+  box-shadow: 0 10px 24px rgba(8, 118, 111, 0.2);
 }
 
 @keyframes brand-heartbeat {
@@ -97,17 +98,33 @@
 }
 
 .brand-button strong {
-  font-size: 20px;
+  font-size: 18px;
 }
 
 .brand-button small {
-  margin-top: 5px;
+  margin-top: 3px;
   color: var(--muted-ink);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .nav-actions {
-  gap: 10px;
+  gap: 8px;
+}
+
+.topbar .primary-button,
+.topbar .ghost-button {
+  min-height: 38px;
+  padding: 0 14px;
+  font-size: 15px;
+}
+
+.topbar .primary-button.small {
+  min-height: 38px;
+}
+
+.topbar .icon-button {
+  width: 38px;
+  min-height: 38px;
 }
 
 button,
@@ -183,10 +200,35 @@ button {
 .secondary-button:disabled,
 .ghost-button:disabled,
 .icon-button:disabled {
-  cursor: wait;
+  cursor: not-allowed;
   opacity: 0.68;
   transform: none;
   box-shadow: none;
+}
+
+.primary-button.is-loading:disabled {
+  cursor: wait;
+  opacity: 0.9;
+}
+
+/* 加载中的按钮始终保持稳定外观，hover 不再产生位移或变色，避免"悬浮出现加载按钮"的错觉 */
+.primary-button.is-loading:hover,
+.send-btn.is-loading:hover {
+  transform: none;
+  background: var(--brand, #08766f);
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .primary-button:focus-visible,
@@ -216,7 +258,7 @@ textarea:focus-visible {
 
 .hero-section {
   position: relative;
-  min-height: max(640px, calc(92svh - 72px));
+  min-height: max(640px, calc(92svh - var(--topbar-height)));
   overflow: hidden;
   isolation: isolate;
 }
@@ -232,14 +274,14 @@ textarea:focus-visible {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: 68% center;
+  object-position: 76% 42%;
 }
 
 .hero-shade {
   z-index: -1;
   background:
-    linear-gradient(90deg, rgba(248, 251, 250, 0.98) 0%, rgba(248, 251, 250, 0.9) 42%, rgba(248, 251, 250, 0.38) 72%, rgba(248, 251, 250, 0.08) 100%),
-    linear-gradient(180deg, rgba(248, 251, 250, 0.12), rgba(248, 251, 250, 0.7));
+    linear-gradient(90deg, rgba(248, 251, 250, 0.97) 0%, rgba(248, 251, 250, 0.84) 34%, rgba(248, 251, 250, 0.22) 56%, rgba(248, 251, 250, 0) 72%),
+    linear-gradient(180deg, rgba(248, 251, 250, 0), rgba(248, 251, 250, 0.28));
 }
 
 .hero-copy {
@@ -268,8 +310,7 @@ textarea:focus-visible {
 
 .hero-copy p,
 .workspace-header p,
-.auth-copy p,
-.method-band p {
+.auth-copy p {
   font-size: clamp(18px, 2vw, 22px);
   line-height: 1.72;
 }
@@ -301,85 +342,104 @@ textarea:focus-visible {
   line-height: 1.55;
 }
 
-.method-band {
+.home-features {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1px;
-  background: #123f42;
+  gap: clamp(14px, 2.5vw, 22px);
+  padding: clamp(28px, 4vw, 40px) clamp(18px, 6vw, 88px) clamp(20px, 3vw, 28px);
+  background: var(--page);
 }
 
-.method-band article {
-  padding: clamp(30px, 5vw, 56px);
-  color: #fff;
-  background: #123f42;
+.home-feature-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: clamp(20px, 2.5vw, 26px);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(18, 63, 66, 0.06);
 }
 
-.method-band svg {
-  color: #80d7c8;
+.home-feature-icon {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  color: #08766f;
+  background: #e8f6f4;
+  border-radius: 10px;
 }
 
-.method-band h2 {
-  margin: 18px 0 10px;
-  font-size: 28px;
+.home-feature-body h2 {
+  margin: 0 0 8px;
+  color: var(--ink);
+  font-size: clamp(17px, 1.8vw, 20px);
+  font-weight: 700;
+  line-height: 1.35;
 }
 
-.method-band p {
+.home-feature-body p {
   margin: 0;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--muted-ink);
+  font-size: 15px;
+  line-height: 1.65;
 }
 
-.method-band-footer {
-  grid-column: 1 / -1;
-  padding: clamp(28px, 4vw, 40px) clamp(30px, 5vw, 56px);
-  background: rgba(0, 0, 0, 0.14);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+.home-boundary {
+  padding: 0 clamp(18px, 6vw, 88px) clamp(40px, 6vw, 64px);
 }
 
-.method-band-footer-head {
+.home-boundary-head {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 10px 20px;
-  margin-bottom: clamp(18px, 3vw, 24px);
+  gap: 8px 16px;
+  margin-bottom: 16px;
 }
 
-.method-band-footer-label {
-  color: #80d7c8;
+.home-boundary-label {
+  color: #08766f;
   font-weight: 700;
   font-size: 13px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
 }
 
-.method-band-footer-lead {
+.home-boundary-head h2 {
   margin: 0;
-  color: rgba(255, 255, 255, 0.92);
-  font-size: clamp(17px, 2vw, 19px);
+  color: var(--ink);
+  font-size: clamp(18px, 2.2vw, 22px);
   font-weight: 600;
   line-height: 1.4;
 }
 
-.method-band-footer-list {
+.home-boundary-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: clamp(16px, 3vw, 28px);
+  gap: clamp(12px, 2vw, 18px);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.method-band-footer-list li {
+.home-boundary-list li {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 15px;
+  padding: 16px 18px;
+  color: var(--body);
+  font-size: 14px;
   line-height: 1.65;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
 }
 
-.method-band-footer-list svg {
+.home-boundary-list svg {
   flex-shrink: 0;
-  margin-top: 3px;
-  color: #80d7c8;
+  margin-top: 2px;
+  color: #08766f;
 }
 
 .auth-layout,
@@ -393,7 +453,7 @@ textarea:focus-visible {
   grid-template-columns: minmax(300px, 0.9fr) minmax(320px, 460px);
   gap: clamp(30px, 7vw, 96px);
   align-items: center;
-  min-height: calc(100svh - 72px);
+  min-height: calc(100svh - var(--topbar-height));
 }
 
 .auth-copy svg {
@@ -649,7 +709,7 @@ textarea {
   grid-template-columns: minmax(0, 1fr) 340px;
   gap: 24px;
   padding: clamp(20px, 4vw, 40px) clamp(18px, 6vw, 88px);
-  min-height: calc(100svh - 72px);
+  min-height: calc(100svh - var(--topbar-height));
   background: #fdfefe;
   max-width: 1400px;
   margin: 0 auto;
@@ -850,6 +910,77 @@ textarea {
   border-radius: 50%;
   display: grid;
   place-items: center;
+}
+
+.send-btn:not(:disabled):hover {
+  background: #0a857c;
+}
+
+.message-with-citations {
+  margin: 0;
+}
+
+.citation-sup {
+  color: #08766f;
+  font-size: 0.78em;
+  font-weight: 800;
+  text-decoration: none;
+  vertical-align: super;
+  line-height: 0;
+  margin: 0 1px;
+}
+
+.citation-sup:hover {
+  text-decoration: underline;
+}
+
+.message-citations {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--line);
+}
+
+.citations-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted-ink);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.citation-footnotes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.citation-footnotes li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.citation-footnotes a {
+  color: #08766f;
+  text-decoration: none;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.citation-footnotes a:hover {
+  text-decoration: underline;
+}
+
+.citation-index {
+  flex-shrink: 0;
+  color: var(--muted-ink);
+  font-weight: 700;
 }
 
 .chat-actions-redesigned {
@@ -1349,7 +1480,7 @@ textarea {
 
 @media (max-width: 900px) {
   .topbar {
-    padding: 12px 18px;
+    padding: 0 18px;
   }
 
   .ghost-button {
@@ -1377,8 +1508,8 @@ textarea {
     margin: 0;
   }
 
-  .method-band,
-  .method-band-footer-list,
+  .home-features,
+  .home-boundary-list,
   .auth-layout,
   .consult-grid,
   .question-layout,
@@ -1392,7 +1523,7 @@ textarea {
     max-height: none;
   }
 
-  .method-band-footer-list {
+  .home-boundary-list {
     grid-template-columns: 1fr;
   }
 }

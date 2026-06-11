@@ -79,7 +79,7 @@ export function assessRisk(state: CaseState): RiskAssessOutput {
   const deniedSignals = state.riskProbe.redFlagDenied
 
   let computedLevel: RiskLevel
-  let reasonParts: string[] = []
+  let reasonParts: string[]
 
   const confirmedSignals = state.riskProbe.redFlagConfirmed
   const unresolvedSignals = state.riskProbe.unresolvedRedFlags

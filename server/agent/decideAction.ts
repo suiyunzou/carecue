@@ -46,8 +46,18 @@ export async function decideAction(input: {
   return enforceConstraints(decision, state)
 }
 
+/** 联网检索总开关：AGENT_WEB_SEARCH_ENABLED=false 时完全关闭检索以节省成本/提速。 */
+export function webSearchEnabled(): boolean {
+  return process.env.AGENT_WEB_SEARCH_ENABLED !== 'false'
+}
+
 /** 代码侧约束修正：违反选择规则的决策被改写为合法决策（§8.3） */
 export function enforceConstraints(decision: AgentDecision, state: CaseState): AgentDecision {
+  // 联网检索被关闭 -> 改为基于现有信息分析/输出
+  if (decision.action === 'search_medical' && !webSearchEnabled()) {
+    return deterministicDecision(state, '联网检索已关闭，基于现有信息继续分析。')
+  }
+
   // 搜索超限 -> 改为分析或最终回答
   if (decision.action === 'search_medical' && state.meta.searchRounds >= AGENT_LIMITS.maxSearchRounds) {
     return deterministicDecision(state, '搜索轮次已达上限，决策被修正。')
@@ -61,6 +71,16 @@ export function enforceConstraints(decision: AgentDecision, state: CaseState): A
   // 没有症状信息时不允许 analyze_case
   if (decision.action === 'analyze_case' && !state.symptoms.chiefComplaint) {
     return forcedDecision('ask_user', '没有症状信息，必须先向用户了解情况。')
+  }
+
+  // 已有足够证据时不再重复搜索（case-flow 显示连续 2 轮搜索占 ~137s）
+  if (decision.action === 'search_medical' && state.evidence.length > 0) {
+    return deterministicDecision(state, '已有联网证据，跳过重复搜索。')
+  }
+
+  // 没有疑似方向时不允许先搜索：应先 analyze_case
+  if (decision.action === 'search_medical' && state.hypotheses.length === 0) {
+    return forcedDecision('analyze_case', '尚无疑似方向，应先分析再按需检索。')
   }
 
   // 没有疑似方向或没有证据时不允许 generate_care_plan
@@ -80,18 +100,19 @@ export function enforceConstraints(decision: AgentDecision, state: CaseState): A
 export function deterministicDecision(state: CaseState, note?: string): AgentDecision {
   const prefix = note ? `${note} ` : ''
 
-  // 1. 证据不足且还能搜索 -> search_medical
+  // 1. 没有疑似方向 -> 先 analyze_case（避免无方向时盲目搜索，见 case-flow c9397b7b）
+  if (state.hypotheses.length === 0) {
+    return forcedDecision('analyze_case', `${prefix}尚无疑似方向，需要先分析病例。`)
+  }
+
+  // 2. 有疑似方向但缺证据且还能搜索 -> search_medical
   if (
+    webSearchEnabled() &&
     state.evidence.length === 0 &&
     state.meta.searchRounds < AGENT_LIMITS.maxSearchRounds &&
     state.symptomDomain.primaryDomain !== 'unknown'
   ) {
-    return forcedDecision('search_medical', `${prefix}当前没有医学证据，需要先联网检索权威资料。`)
-  }
-
-  // 2. 没有疑似方向 -> analyze_case
-  if (state.hypotheses.length === 0) {
-    return forcedDecision('analyze_case', `${prefix}已有症状/证据但没有疑似方向，需要分析。`)
+    return forcedDecision('search_medical', `${prefix}已有疑似方向但缺医学证据，联网检索一次。`)
   }
 
   // 3. 完整支持域且没有 carePlan 且有证据 -> generate_care_plan

@@ -5,7 +5,7 @@
 import type { FollowupQuestion } from './case/CaseState.ts'
 import type { CaseStateService } from './case/caseStateService.ts'
 import type { MessageService } from './messages/messageService.ts'
-import type { ToolExecutor } from './tools/ToolExecutor.ts'
+import type { ToolExecutor, ToolExecutionResult } from './tools/ToolExecutor.ts'
 import type { ToolContext } from './tools/Tool.ts'
 import type { TraceLogger } from './logs/traceLogger.ts'
 import type { LlmClient } from './llm/llmClient.ts'
@@ -78,9 +78,25 @@ export async function runCareCueAgent(
     search,
   })
 
+  const runTool = async <O>(
+    toolName: string,
+    toolInput: unknown,
+  ): Promise<ToolExecutionResult<O>> => {
+    emit({ type: 'tool_step', phase: 'start', toolName })
+    const result = await toolExecutor.run<O>(toolName, toolInput, buildCtx())
+    emit({
+      type: 'tool_step',
+      phase: 'done',
+      toolName,
+      status: result.status,
+      summary: summarizeToolStep(toolName, result),
+    })
+    return result
+  }
+
   // ---- 阶段 1：症状抽取 ----
   emit({ type: 'status', message: '正在提取症状信息...' })
-  const extracted = await toolExecutor.run('symptom.extract', { userMessage: input.userMessage }, buildCtx())
+  const extracted = await runTool('symptom.extract', { userMessage: input.userMessage })
   if (extracted.status === 'success') {
     await messageService.appendToolResult(caseId, extracted.message)
     state = await caseStateService.merge(caseId, {
@@ -93,7 +109,7 @@ export async function runCareCueAgent(
   }
 
   // ---- 阶段 2：症状域识别 ----
-  const domainResult = await toolExecutor.run('symptom.domain_classify', {}, buildCtx())
+  const domainResult = await runTool('symptom.domain_classify', {})
   if (domainResult.status === 'success') {
     state = await caseStateService.merge(caseId, {
       patch: domainResult.statePatch,
@@ -105,7 +121,7 @@ export async function runCareCueAgent(
 
   // ---- 阶段 3：风险核查 ----
   emit({ type: 'status', message: '正在检查危险信号...' })
-  const riskProbeResult = await toolExecutor.run('risk.probe', {}, buildCtx())
+  const riskProbeResult = await runTool('risk.probe', {})
   if (riskProbeResult.status === 'success') {
     state = await caseStateService.merge(caseId, {
       patch: riskProbeResult.statePatch,
@@ -116,7 +132,7 @@ export async function runCareCueAgent(
   }
 
   // ---- 阶段 4：红旗规则评估 ----
-  const riskResult = await toolExecutor.run('risk.red_flag_assess', {}, buildCtx())
+  const riskResult = await runTool('risk.red_flag_assess', {})
   if (riskResult.status === 'success') {
     state = await caseStateService.merge(caseId, {
       patch: riskResult.statePatch,
@@ -148,7 +164,7 @@ export async function runCareCueAgent(
 
   // ---- R2 且关键红旗未确认：优先风险核查追问 ----
   if (state.risk.level === 'R2' && state.riskProbe.unresolvedRedFlags.length > 0 && state.riskProbe.probeStatus === 'in_progress') {
-    const questionsResult = await toolExecutor.run<FollowupOutput>('question.generate_risk_probe', {}, buildCtx())
+    const questionsResult = await runTool<FollowupOutput>('question.generate_risk_probe', {})
 
     if (questionsResult.status === 'success') {
       const checked = questionGuard.validate(toFollowups(questionsResult.output.questions, 'risk_probe'), state)
@@ -174,7 +190,6 @@ export async function runCareCueAgent(
 
   // ---- 阶段 5：Agent 决策主循环 ----
   let searchRelaxRetryUsed = false
-  let reportRewriteUsed = false
   let carePlanRewriteUsed = false
 
   for (let step = 0; step < AGENT_LIMITS.maxAgentSteps; step++) {
@@ -182,6 +197,7 @@ export async function runCareCueAgent(
     const decision = await decideAction({ state, contextSummary, llm, traceLogger })
 
     traceLogger.logDecision(caseId, decision)
+    emit({ type: 'agent_decision', action: decision.action, reason: decision.reason })
     state = await caseStateService.merge(caseId, {
       patch: {
         decisionHistory: [decision],
@@ -250,7 +266,7 @@ export async function runCareCueAgent(
 
       case 'analyze_case': {
         emit({ type: 'status', message: '正在分析可能的疾病方向...' })
-        const result = await toolExecutor.run<CaseAnalyzeOutput>('case.analyze', {}, buildCtx())
+        const result = await runTool<CaseAnalyzeOutput>('case.analyze', {})
         if (result.status === 'error') {
           return finish(await failureRecovery.handle({ code: result.message.error!.code, state }))
         }
@@ -268,7 +284,7 @@ export async function runCareCueAgent(
 
       case 'generate_care_plan': {
         emit({ type: 'status', message: '正在整理日常处理建议...' })
-        const result = await toolExecutor.run<CarePlan>('care_plan.generate', {}, buildCtx())
+        const result = await runTool<CarePlan>('care_plan.generate', {})
         if (result.status === 'error') {
           // carePlan 失败不致命：继续走 final_answer（报告中将缺少成分边界，由模板兜底）
           traceLogger.log(caseId, 'failure_recovery', {
@@ -330,7 +346,7 @@ export async function runCareCueAgent(
 
       case 'ask_user': {
         emit({ type: 'status', message: '还需要补充关键信息，正在生成追问...' })
-        const result = await toolExecutor.run<FollowupOutput>('question.generate', {}, buildCtx())
+        const result = await runTool<FollowupOutput>('question.generate', {})
         if (result.status === 'error') {
           // 无法生成追问 -> 按现有信息输出阶段性判断
           return finish(await failureRecovery.handle({ code: result.message.error!.code, state }))
@@ -364,10 +380,9 @@ export async function runCareCueAgent(
 
       case 'final_answer': {
         emit({ type: 'status', message: '正在生成分析报告...' })
-        let draft = await toolExecutor.run<FinalReport>(
+        let draft = await runTool<FinalReport>(
           'report.generate',
           { reportType: 'final' },
-          buildCtx(),
         )
         if (draft.status === 'error') {
           return finish(await failureRecovery.handle({ code: 'FINAL_GUARD_FAILED', state }))
@@ -378,13 +393,11 @@ export async function runCareCueAgent(
           output: { passed: checked.passed, issues: checked.issues.map((i) => i.code) },
         })
 
-        if (!checked.passed && !reportRewriteUsed) {
-          // §39.2：带 issues 重写报告，最多 1 次
-          reportRewriteUsed = true
-          draft = await toolExecutor.run<FinalReport>(
+        if (!checked.passed) {
+          // §39.2：带 issues 重写报告一次（final_answer 分支结束即返回，不会二次进入）
+          draft = await runTool<FinalReport>(
             'report.generate',
             { reportType: 'final', guardIssues: checked.issues.map((i) => i.message) },
-            buildCtx(),
           )
           if (draft.status === 'success') {
             checked = await finalAnswerGuard.validate({ state, draftReport: draft.output })
@@ -471,4 +484,35 @@ async function buildContextSummary(messageService: MessageService, caseId: strin
       return `[${m.role}] ${typeof m.content === 'string' ? m.content.slice(0, 120) : ''}`
     })
     .join('\n')
+}
+
+const TOOL_LABELS: Record<string, string> = {
+  'symptom.extract': '症状抽取',
+  'symptom.domain_classify': '症状域分类',
+  'risk.probe': '风险探查',
+  'risk.red_flag_assess': '红旗评估',
+  'case.analyze': '病例分析',
+  'care_plan.generate': '处理建议',
+  'question.generate': '生成追问',
+  'question.generate_risk_probe': '危险信号追问',
+  'report.generate': '生成报告',
+}
+
+function summarizeToolStep(
+  toolName: string,
+  result: { status: string; output?: unknown; message?: { error?: { code?: string; message?: string } } },
+): string {
+  const label = TOOL_LABELS[toolName] ?? toolName
+  if (result.status === 'error') {
+    const code = result.message?.error?.code ?? '失败'
+    return `${label}：${code}`
+  }
+  if (toolName === 'case.analyze' && result.output && typeof result.output === 'object' && 'hypotheses' in result.output) {
+    const hypos = (result.output as CaseAnalyzeOutput).hypotheses
+    return `${label}：形成 ${hypos.length} 个疑似方向`
+  }
+  if (toolName === 'symptom.extract') {
+    return `${label}：完成`
+  }
+  return `${label}：成功`
 }

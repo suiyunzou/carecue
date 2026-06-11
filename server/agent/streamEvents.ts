@@ -17,6 +17,14 @@ export type AgentStreamEvent =
     }
   | { type: 'search_query'; queries: string[] }
   | { type: 'search_result'; sources: Array<{ title: string; url: string; credibility: string }> }
+  | {
+      type: 'tool_step'
+      phase: 'start' | 'done'
+      toolName: string
+      status?: 'success' | 'error'
+      summary?: string
+    }
+  | { type: 'agent_decision'; action: string; reason: string }
   | { type: 'final'; response: AgentResponse }
   | { type: 'error'; message: string }
 

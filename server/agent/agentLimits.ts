@@ -6,12 +6,12 @@ import type { AgentFailureCode } from './failureRecovery.ts'
 
 export const AGENT_LIMITS = {
   maxAgentSteps: 7,
-  maxSearchRounds: 3,
-  maxQueriesPerRound: 5,
-  maxSourcesPerQuery: 5,
-  maxAcceptedSources: 8,
-  maxEvidenceItems: 12,
-  maxEvidenceCharsForLLM: 6000,
+  maxSearchRounds: 1,
+  maxQueriesPerRound: 2,
+  maxSourcesPerQuery: 3,
+  maxAcceptedSources: 4,
+  maxEvidenceItems: 6,
+  maxEvidenceCharsForLLM: 4000,
   maxAskedQuestionsTotal: 8,
   maxQuestionsPerTurn: 3,
   maxFinalReportChars: 3000,

@@ -3,7 +3,9 @@
 import type { CaseState, FollowupQuestion } from '../case/CaseState.ts'
 import type { FinalReport } from './reportSchema.ts'
 import {
+  buildCitations,
   buildStateSnapshot,
+  type Citation,
   type EmergencyResponse,
   type FinalReportResponse,
   type FollowupResponse,
@@ -19,19 +21,50 @@ const LIKELIHOOD_LABELS: Record<string, string> = {
 }
 
 const CN_NUMERALS = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二', '十三', '十四']
+const CIRCLED_NUMERALS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧']
 
 function numberSections(sections: string[]): string {
   return sections.map((s, i) => `${CN_NUMERALS[i] ?? i + 1}、${s}`).join('\n\n')
 }
 
+function citationMarker(index: number): string {
+  return CIRCLED_NUMERALS[index - 1] ?? `[${index}]`
+}
+
+/** 为疑似方向匹配最相关的证据角标 */
+function hypothesisCitation(state: CaseState, hypothesisName: string, urlToIndex: Map<string, number>): string {
+  const match = state.evidence.find((e) =>
+    e.relatedHypotheses.some((h) => hypothesisName.includes(h) || h.includes(hypothesisName)),
+  )
+  if (!match) return ''
+  const idx = urlToIndex.get(match.sourceUrl)
+  return idx ? citationMarker(idx) : ''
+}
+
+function buildUrlIndex(citations: Citation[]): Map<string, number> {
+  return new Map(citations.map((c) => [c.url, c.index]))
+}
+
+function withResponseMeta<T extends { caseId: string; riskLevel: CaseState['risk']['level']; stateSnapshot: ReturnType<typeof buildStateSnapshot> }>(
+  state: CaseState,
+  response: T,
+): T & { citations: Citation[] } {
+  const citations = buildCitations(state)
+  return { ...response, citations }
+}
+
 export const reportRenderer = {
   renderFinalReport(state: CaseState, report: FinalReport): FinalReportResponse {
-    // 倾向方向与"必须排除的危险情况"分开输出，不混在一个列表里
+    const citations = buildCitations(state)
+    const urlToIndex = buildUrlIndex(citations)
+
     const likelyHypotheses = report.hypotheses.filter((h) => h.likelihood !== 'must_rule_out')
     const mustRuleOut = report.hypotheses.filter((h) => h.likelihood === 'must_rule_out')
 
-    const renderHypothesis = (h: FinalReport['hypotheses'][number], i: number) =>
-      `${i + 1}. ${h.name}（${LIKELIHOOD_LABELS[h.likelihood] ?? h.likelihood}）\n   支持：${h.supportEvidence.join('；') || '—'}\n   反对/不确定：${[...h.againstEvidence, ...h.uncertainties].join('；') || '—'}`
+    const renderHypothesis = (h: FinalReport['hypotheses'][number], i: number) => {
+      const marker = hypothesisCitation(state, h.name, urlToIndex)
+      return `${i + 1}. ${h.name}${marker}（${LIKELIHOOD_LABELS[h.likelihood] ?? h.likelihood}）\n   支持：${h.supportEvidence.join('；') || '—'}\n   反对/不确定：${[...h.againstEvidence, ...h.uncertainties].join('；') || '—'}`
+    }
 
     const sections: string[] = [
       `当前结论\n${report.currentConclusion}`,
@@ -72,20 +105,20 @@ export const reportRenderer = {
 
     const rendered = [
       numberSections(sections),
-      report.references.length > 0
-        ? `参考依据\n${report.references.map((r) => `- ${r.title}：${r.url}`).join('\n')}`
+      citations.length > 0
+        ? `参考依据\n${citations.map((c) => `${citationMarker(c.index)} ${c.title}`).join('\n')}`
         : `参考依据\n${renderSearchTraceNote(state)}`,
       `说明\n${report.uncertaintyNote}`,
     ].join('\n\n')
 
-    return {
+    return withResponseMeta(state, {
       type: 'final_report',
       caseId: state.caseId,
       riskLevel: state.risk.level,
       report,
       rendered,
       stateSnapshot: buildStateSnapshot(state),
-    }
+    })
   },
 
   renderFollowup(input: {
@@ -101,7 +134,7 @@ export const reportRenderer = {
           ? '为了区分几个可能方向，需要确认：'
           : '为了判断哪些日常处理建议更适合你，需要确认：'
 
-    return {
+    return withResponseMeta(input.state, {
       type: 'followup',
       caseId: input.state.caseId,
       riskLevel: input.state.risk.level,
@@ -109,11 +142,11 @@ export const reportRenderer = {
       intro: input.intro || defaultIntro,
       questions: input.questions,
       stateSnapshot: buildStateSnapshot(input.state),
-    }
+    })
   },
 
   renderEmergency(state: CaseState, content: string, doctorSummary: string): EmergencyResponse {
-    return {
+    return withResponseMeta(state, {
       type: 'emergency',
       caseId: state.caseId,
       riskLevel: 'R3',
@@ -121,7 +154,7 @@ export const reportRenderer = {
       triggeredCombination: state.risk.redFlags,
       doctorSummary,
       stateSnapshot: buildStateSnapshot(state),
-    }
+    })
   },
 
   renderStageReport(input: {
@@ -131,15 +164,15 @@ export const reportRenderer = {
     nextStepHints?: string[]
   }): StageReportResponse {
     const { state } = input
+    const citations = buildCitations(state)
+    const urlToIndex = buildUrlIndex(citations)
     const parts: string[] = ['【阶段性整理】（当前信息还不足以给出完整判断）']
 
-    // 已知信息明细：用户给过的关键信息必须全部体现，不允许丢失
     const facts = buildKnownFacts(state)
     if (facts.length > 0) {
       parts.push(`目前了解到：\n${facts.map((f) => `- ${f.label}：${f.value}`).join('\n')}`)
     }
 
-    // 风险：已确认警示信号 / 已排除 / 待确认 分层表述
     const riskLines = [`当前风险评估：${state.risk.level}。${state.risk.reason}`]
     if (state.riskProbe.redFlagConfirmed.length > 0) {
       riskLines.push(`需要警惕的信号：${state.riskProbe.redFlagConfirmed.join('、')}`)
@@ -149,27 +182,40 @@ export const reportRenderer = {
     }
     parts.push(riskLines.join('\n'))
 
-    // 倾向方向与必须排除分开
     const likely = state.hypotheses.filter((h) => h.likelihood !== 'must_rule_out')
     const mustRuleOut = state.hypotheses.filter((h) => h.likelihood === 'must_rule_out')
     if (likely.length > 0) {
       parts.push(
         `当前更倾向的方向（低置信，仅供参考）：${likely
-          .map((h) => `${h.name}（${LIKELIHOOD_LABELS[h.likelihood] ?? h.likelihood}）`)
+          .map((h) => {
+            const marker = hypothesisCitation(state, h.name, urlToIndex)
+            return `${h.name}${marker}（${LIKELIHOOD_LABELS[h.likelihood] ?? h.likelihood}）`
+          })
           .join('、')}`,
       )
     }
     if (mustRuleOut.length > 0) {
-      parts.push(`需要优先排除的情况（概率不高但风险高）：${mustRuleOut.map((h) => h.name).join('、')}`)
+      parts.push(
+        `需要优先排除的情况（概率不高但风险高）：${mustRuleOut
+          .map((h) => {
+            const marker = hypothesisCitation(state, h.name, urlToIndex)
+            return `${h.name}${marker}`
+          })
+          .join('、')}`,
+      )
     }
 
-    parts.push(`资料核验：${renderSearchTraceNote(state)}`)
+    if (citations.length > 0) {
+      parts.push(`资料核验：已检索并引用 ${citations.length} 条权威来源（见下方链接）`)
+    } else {
+      parts.push(`资料核验：${renderSearchTraceNote(state)}`)
+    }
 
     const hints = (input.nextStepHints ?? buildPendingQuestions(state)).slice(0, 4)
     parts.push(`下一步建议：\n${(hints.length > 0 ? hints : ['如症状持续或加重，建议线下就诊确认。']).map((h) => `- ${h}`).join('\n')}`)
     parts.push('说明：以上是阶段性整理，不是诊断结论。如出现明显加重或新的危险信号，请尽快就医。')
 
-    return {
+    return withResponseMeta(state, {
       type: 'stage_report',
       caseId: state.caseId,
       riskLevel: state.risk.level,
@@ -178,7 +224,7 @@ export const reportRenderer = {
       failureCode: input.failureCode,
       nextStepHints: hints,
       stateSnapshot: buildStateSnapshot(state),
-    }
+    })
   },
 }
 

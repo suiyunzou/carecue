@@ -5,6 +5,13 @@ import type { RiskLevel } from './risk/riskLevel.ts'
 import type { FinalReport } from './report/reportSchema.ts'
 import { buildKnownFacts, fieldHasValue } from './case/stateFields.ts'
 
+export type Citation = {
+  index: number
+  title: string
+  url: string
+  credibility: string
+}
+
 export type AgentResponseBase = {
   caseId: string
   riskLevel: RiskLevel
@@ -18,9 +25,12 @@ export type AgentResponseBase = {
     knownFacts: Array<{ label: string; value: string }>
     hypotheses: Array<{ name: string; likelihood: string }>
     evidenceSources: Array<{ title: string; url: string; credibility: string }>
+    citations: Citation[]
     searchQueries: string[]
     missingInfo: string[]
   }
+  /** 本条回复引用的来源（用于对话下方脚注） */
+  citations: Citation[]
 }
 
 export type FollowupResponse = AgentResponseBase & {
@@ -57,7 +67,24 @@ export type AgentResponse =
   | FinalReportResponse
   | StageReportResponse
 
+export function buildCitations(state: CaseState): Citation[] {
+  const seen = new Set<string>()
+  const citations: Citation[] = []
+  for (const e of state.evidence) {
+    if (seen.has(e.sourceUrl)) continue
+    seen.add(e.sourceUrl)
+    citations.push({
+      index: citations.length + 1,
+      title: e.sourceTitle,
+      url: e.sourceUrl,
+      credibility: e.credibility,
+    })
+  }
+  return citations
+}
+
 export function buildStateSnapshot(state: CaseState): AgentResponseBase['stateSnapshot'] {
+  const citations = buildCitations(state)
   return {
     chiefComplaint: state.symptoms.chiefComplaint,
     primaryDomain: state.symptomDomain.primaryDomain,
@@ -66,11 +93,8 @@ export function buildStateSnapshot(state: CaseState): AgentResponseBase['stateSn
     inRiskProbe: state.riskProbe.probeStatus === 'in_progress',
     knownFacts: buildKnownFacts(state),
     hypotheses: state.hypotheses.map((h) => ({ name: h.name, likelihood: h.likelihood })),
-    evidenceSources: state.evidence.map((e) => ({
-      title: e.sourceTitle,
-      url: e.sourceUrl,
-      credibility: e.credibility,
-    })),
+    evidenceSources: citations.map((c) => ({ title: c.title, url: c.url, credibility: c.credibility })),
+    citations,
     searchQueries: Array.from(new Set(state.searchTrace.map((t) => t.query))),
     missingInfo: buildPendingMissingQuestions(state),
   }

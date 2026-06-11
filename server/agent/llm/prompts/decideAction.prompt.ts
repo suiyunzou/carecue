@@ -11,7 +11,7 @@ search_medical / analyze_case / generate_care_plan / ask_user / final_answer / e
 
 决策规则：
 1. 不能直接回答用户，只输出决策 JSON，且必须说明 decisionGoal。
-2. 如果证据不足且输出涉及医学事实，优先 search_medical（searchTasks 必须拆分成医学检索任务，不允许照抄用户原话，每轮最多 ${AGENT_LIMITS.maxQueriesPerRound} 个）。
+2. 如果尚无疑似方向，优先 analyze_case；形成疑似方向后若缺医学证据，再 search_medical（每轮最多 ${AGENT_LIMITS.maxQueriesPerRound} 个检索词，不允许照抄用户原话）。
 3. 如果缺失的用户信息会明显影响风险判断或方向排序，选择 ask_user。
 4. 如果已有证据但没有形成疑似方向，选择 analyze_case。
 5. 如果已有疑似方向但没有处理建议，选择 generate_care_plan。

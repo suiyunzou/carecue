@@ -11,6 +11,7 @@ import {
   History,
   Info,
   ListChecks,
+  Loader2,
   LogOut,
   Paperclip,
   Search,
@@ -85,6 +86,13 @@ type AgentFollowupQuestion = {
   type: 'risk_probe' | 'differential' | 'care_plan'
 }
 
+type AgentCitation = {
+  index: number
+  title: string
+  url: string
+  credibility: string
+}
+
 type AgentSnapshot = {
   chiefComplaint: string
   primaryDomain: string
@@ -94,6 +102,7 @@ type AgentSnapshot = {
   knownFacts: Array<{ label: string; value: string }>
   hypotheses: Array<{ name: string; likelihood: string }>
   evidenceSources: Array<{ title: string; url: string; credibility: string }>
+  citations: AgentCitation[]
   searchQueries: string[]
   missingInfo: string[]
 }
@@ -101,6 +110,7 @@ type AgentSnapshot = {
 type AgentResponse = {
   caseId: string
   riskLevel: AgentRiskLevel
+  citations: AgentCitation[]
   stateSnapshot: AgentSnapshot
 } & (
   | { type: 'followup'; mode: 'risk_probe' | 'differential' | 'care_plan'; intro: string; questions: AgentFollowupQuestion[] }
@@ -115,6 +125,14 @@ type AgentStreamEvent =
   | { type: 'risk_check'; level: AgentRiskLevel; confirmed: string[]; denied: string[]; unresolved: string[]; reason: string }
   | { type: 'search_query'; queries: string[] }
   | { type: 'search_result'; sources: Array<{ title: string; url: string; credibility: string }> }
+  | {
+      type: 'tool_step'
+      phase: 'start' | 'done'
+      toolName: string
+      status?: 'success' | 'error'
+      summary?: string
+    }
+  | { type: 'agent_decision'; action: string; reason: string }
   | { type: 'final'; response: AgentResponse; record?: ConsultationRecord }
   | { type: 'error'; message: string }
 
@@ -126,6 +144,8 @@ type ChatMessage = {
   questions?: AgentFollowupQuestion[]
   /** 本条回复的可审计分析过程（可折叠展示） */
   process?: string[]
+  /** 本条回复引用的权威来源 */
+  citations?: AgentCitation[]
 }
 
 type ConsultationRecord = {
@@ -336,7 +356,7 @@ function App() {
         <header className="topbar">
           <button className="brand-button" onClick={() => setView('home')} type="button">
             <span className={`brand-mark${view === 'home' ? ' brand-mark--beating' : ''}`}>
-              <HeartPulse size={22} />
+              <HeartPulse size={18} />
             </span>
             <span>
               <strong>问康</strong>
@@ -377,7 +397,7 @@ function App() {
         <header className="topbar">
           <div className="brand-button">
             <span className="brand-mark">
-              <HeartPulse size={22} />
+              <HeartPulse size={18} />
             </span>
             <span>
               <strong>问康</strong>
@@ -478,9 +498,9 @@ function App() {
                   </button>
                 ))}
               </div>
-              <button className="primary-button" disabled={isChatting} onClick={startConsultation} type="button">
-                {isChatting ? '正在整理' : '开始说明症状'}
-                <ArrowRight size={18} />
+              <button className={`primary-button${isChatting ? ' is-loading' : ''}`} disabled={isChatting} onClick={startConsultation} type="button">
+                {isChatting ? '正在整理' : '开始分析'}
+                {isChatting ? <Loader2 className="spin" size={18} /> : <ArrowRight size={18} />}
               </button>
             </div>
             <aside className={`urgent-panel ${isUrgentInput ? 'urgent-active' : 'urgent-default'}`}>
@@ -559,8 +579,8 @@ function HomeView({ onStart }: { onStart: () => void }) {
             <ShieldCheck size={18} />
             就医前症状整理与日常健康咨询助手
           </span>
-          <h1>就医前，先把症状说清楚</h1>
-          <p>通过对话整理症状、核查危险信号和医生沟通摘要，帮助长辈和家人把零散描述变成可就医、可转发、可保存的信息。</p>
+          <h1>身体不适，先做症状梳理</h1>
+          <p>通过对话梳理不适表现、持续时间、伴随症状和危险信号，生成一份可保存、可转发、可用于就医沟通的健康摘要。</p>
           <div className="hero-actions">
             <button className="primary-button" onClick={onStart} type="button">
               立即体验
@@ -572,48 +592,60 @@ function HomeView({ onStart }: { onStart: () => void }) {
           </div>
           <div className="hero-note">
             <AlertTriangle size={18} />
-            问康不是确诊工具，不替代医生开药、停药或调整剂量。出现高危症状时应立即联系急救或线下就医。
+            问康不做诊断，不替代医生判断。出现持续胸痛、呼吸困难、意识异常、肢体无力、大出血等情况，请直接急诊或拨打急救电话。
           </div>
         </div>
       </section>
 
-      <section className="method-band">
-        <article>
-          <ClipboardList size={26} />
-          <h2>说清楚症状</h2>
-          <p>用对话补齐年龄、时间、程度、伴随症状、病史和用药，不用写长文。</p>
-        </article>
-        <article>
-          <ShieldCheck size={26} />
-          <h2>核查危险信号</h2>
-          <p>优先确认是否有需要急诊的情况，再查阅权威资料整理可能方向（不确诊）。</p>
-        </article>
-        <article>
-          <FileText size={26} />
-          <h2>给出可执行建议</h2>
-          <p>整理日常处理、就医时机和医生沟通摘要，方便转发给家人或带去医院。</p>
-        </article>
-
-        <footer className="method-band-footer" id="boundary">
-          <div className="method-band-footer-head">
-            <span className="method-band-footer-label">安全边界</span>
-            <p className="method-band-footer-lead">就医前整理，不作确诊结论</p>
+      <section className="home-features" aria-label="服务流程">
+        <article className="home-feature-card">
+          <div className="home-feature-icon" aria-hidden>
+            <ClipboardList size={24} />
           </div>
-          <ul className="method-band-footer-list">
-            <li>
-              <ShieldCheck size={18} aria-hidden />
-              <span>提供可能方向与阶段性判断，不替代医生面诊与必要检查。</span>
-            </li>
-            <li>
-              <AlertTriangle size={18} aria-hidden />
-              <span>胸痛、呼吸困难、言语异常、肢体无力等危险信号将优先提示就医。</span>
-            </li>
-            <li>
-              <ListChecks size={18} aria-hidden />
-              <span>建议附有依据说明、不确定项及线下就诊指引。</span>
-            </li>
-          </ul>
-        </footer>
+          <div className="home-feature-body">
+            <h2>说清楚症状</h2>
+            <p>补齐时间、部位、程度、诱因、伴随症状和用药信息。</p>
+          </div>
+        </article>
+        <article className="home-feature-card">
+          <div className="home-feature-icon" aria-hidden>
+            <ShieldCheck size={24} />
+          </div>
+          <div className="home-feature-body">
+            <h2>核查危险信号</h2>
+            <p>优先识别胸痛、呼吸困难、意识异常、肢体无力等风险信号。</p>
+          </div>
+        </article>
+        <article className="home-feature-card">
+          <div className="home-feature-icon" aria-hidden>
+            <FileText size={24} />
+          </div>
+          <div className="home-feature-body">
+            <h2>生成就医摘要</h2>
+            <p>整理可能方向、依据、需补充信息和医生沟通要点。</p>
+          </div>
+        </article>
+      </section>
+
+      <section className="home-boundary" id="boundary">
+        <header className="home-boundary-head">
+          <span className="home-boundary-label">安全边界</span>
+          <h2>就医前整理，不作确诊结论</h2>
+        </header>
+        <ul className="home-boundary-list">
+          <li>
+            <ShieldCheck size={18} aria-hidden />
+            <span>提供可能方向与阶段性判断，不替代医生面诊与必要检查。</span>
+          </li>
+          <li>
+            <AlertTriangle size={18} aria-hidden />
+            <span>胸痛、呼吸困难、言语异常、肢体无力等危险信号将优先提示就医。</span>
+          </li>
+          <li>
+            <ListChecks size={18} aria-hidden />
+            <span>建议附有依据说明、不确定项及线下就诊指引。</span>
+          </li>
+        </ul>
       </section>
     </>
   )
@@ -672,6 +704,75 @@ function assistantMessageTitle(message: ChatMessage) {
   }
   if (message.kind) return MESSAGE_KIND_TITLES[message.kind]
   return '问康'
+}
+
+const CITATION_MARKER_PATTERN = /([①②③④⑤⑥⑦⑧]|\[\d+\])/g
+
+function shortSourceTitle(title: string) {
+  const trimmed = title.trim()
+  if (trimmed.length <= 36) return trimmed
+  return `${trimmed.slice(0, 34)}…`
+}
+
+function MessageContentWithCitations({ content, citations }: { content: string; citations: AgentCitation[] }) {
+  if (!citations.length) {
+    return <p className="prewrap">{content}</p>
+  }
+
+  const indexByMarker = new Map<number, AgentCitation>(
+    citations.map((c) => [c.index, c] as const),
+  )
+  const circledByIndex = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧']
+
+  const parts = content.split(CITATION_MARKER_PATTERN)
+  return (
+    <p className="prewrap message-with-citations">
+      {parts.map((part, i) => {
+        if (!part) return null
+        const bracketMatch = part.match(/^\[(\d+)\]$/)
+        const circledIndex = circledByIndex.indexOf(part) + 1
+        const citationIndex = bracketMatch ? Number(bracketMatch[1]) : circledIndex
+        if (citationIndex > 0) {
+          const citation = indexByMarker.get(citationIndex)
+          if (citation) {
+            return (
+              <a
+                className="citation-sup"
+                href={`#cite-${citation.index}`}
+                key={`${part}-${i}`}
+                title={citation.title}
+              >
+                {part}
+              </a>
+            )
+          }
+        }
+        return <React.Fragment key={`${part}-${i}`}>{part}</React.Fragment>
+      })}
+    </p>
+  )
+}
+
+function CitationFootnotes({ citations }: { citations: AgentCitation[] }) {
+  if (!citations.length) return null
+  const circledByIndex = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧']
+
+  return (
+    <div className="message-citations">
+      <span className="citations-label">参考来源</span>
+      <ol className="citation-footnotes">
+        {citations.map((c) => (
+          <li id={`cite-${c.index}`} key={c.url}>
+            <span className="citation-index">{circledByIndex[c.index - 1] ?? c.index}</span>
+            <a href={c.url} rel="noreferrer" target="_blank">
+              {shortSourceTitle(c.title)}
+            </a>
+            <span className={`source-level-badge level-${c.credibility.toLowerCase()}`}>{c.credibility}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
 }
 
 function ChatView({
@@ -741,7 +842,13 @@ function ChatView({
                     </ul>
                   </details>
                 ) : null}
-                <p className="prewrap">{item.content}</p>
+                <MessageContentWithCitations
+                  citations={item.role === 'assistant' ? (item.citations ?? []) : []}
+                  content={item.content}
+                />
+                {item.role === 'assistant' && item.citations?.length ? (
+                  <CitationFootnotes citations={item.citations} />
+                ) : null}
                 {item.questions?.length ? (
                   <ol className="followup-question-list">
                     {item.questions.map((question) => (
@@ -779,11 +886,22 @@ function ChatView({
           <textarea
             value={chatInput}
             onChange={(event) => onInputChange(event.target.value)}
-            placeholder="回答上面的问题，或继续补充症状、病史、用药等"
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                if (chatInput.trim() && !isChatting) onSend()
+              }
+            }}
+            placeholder="回答上面的问题，或继续补充症状、病史、用药等（Enter 发送，Shift+Enter 换行）"
             rows={1}
           />
-          <button className="primary-button send-btn" disabled={!chatInput.trim() || isChatting} type="submit" aria-label="发送">
-            <Send size={18} />
+          <button
+            className={`primary-button send-btn${isChatting ? ' is-loading' : ''}`}
+            disabled={!chatInput.trim() || isChatting}
+            type="submit"
+            aria-label={isChatting ? '正在分析' : '发送'}
+          >
+            {isChatting ? <Loader2 className="spin" size={18} /> : <Send size={18} />}
           </button>
         </form>
 
@@ -857,36 +975,6 @@ function ChatView({
             </div>
           </div>
         </div>
-
-        {snapshot?.searchQueries.length || snapshot?.evidenceSources.length ? (
-          <div className="overview-card">
-            <div className="overview-header">
-              <Search size={20} />
-              <h3>联网核查</h3>
-            </div>
-            {snapshot.searchQueries.length ? (
-              <div className="search-query-chips">
-                {snapshot.searchQueries.map((query) => (
-                  <span className="query-chip" key={query}>{query}</span>
-                ))}
-              </div>
-            ) : null}
-            {snapshot.evidenceSources.length ? (
-              <div className="source-list compact-source-list">
-                {snapshot.evidenceSources.map((source) => (
-                  <a href={source.url} key={source.url} rel="noreferrer" target="_blank">
-                    <span className={`source-level-badge level-${source.credibility.toLowerCase()}`}>
-                      {source.credibility} 级
-                    </span>
-                    {source.title}
-                  </a>
-                ))}
-              </div>
-            ) : (
-              <p className="search-note">本次未获取到可引用的权威来源，结论未经联网核验。</p>
-            )}
-          </div>
-        ) : null}
 
         <div className="risk-warning-card">
           <div className="warning-header">
@@ -1138,9 +1226,40 @@ function describeStreamEvent(event: AgentStreamEvent): string | null {
       return `检索：${event.queries.join('；')}`
     case 'search_result':
       return `已获取 ${event.sources.length} 条权威来源：${event.sources.slice(0, 3).map((s) => s.title).join('；')}`
+    case 'tool_step':
+      if (event.phase === 'start') {
+        return `▶ ${TOOL_STEP_LABELS[event.toolName] ?? event.toolName}`
+      }
+      if (event.status === 'error') {
+        return `✗ ${event.summary ?? TOOL_STEP_LABELS[event.toolName] ?? event.toolName}`
+      }
+      return event.summary ? `✓ ${event.summary}` : null
+    case 'agent_decision':
+      return `决策 → ${DECISION_LABELS[event.action] ?? event.action}`
     default:
       return null
   }
+}
+
+const TOOL_STEP_LABELS: Record<string, string> = {
+  'symptom.extract': '症状抽取',
+  'symptom.domain_classify': '症状域分类',
+  'risk.probe': '风险探查',
+  'risk.red_flag_assess': '红旗评估',
+  'case.analyze': '病例分析',
+  'care_plan.generate': '处理建议',
+  'question.generate': '生成追问',
+  'question.generate_risk_probe': '危险信号追问',
+  'report.generate': '生成报告',
+}
+
+const DECISION_LABELS: Record<string, string> = {
+  search_medical: '联网检索',
+  analyze_case: '病例分析',
+  generate_care_plan: '整理处理建议',
+  ask_user: '向用户追问',
+  final_answer: '生成报告',
+  emergency_stop: '急症停止',
 }
 
 async function api<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
@@ -1189,6 +1308,10 @@ function aiStatusLabel(status: Result['aiStatus']) {
 }
 
 function agentResponseToChatMessage(response: AgentResponse): ChatMessage {
+  const citations = response.citations?.length
+    ? response.citations
+    : response.stateSnapshot.citations ?? []
+
   if (response.type === 'followup') {
     return {
       role: 'assistant',
@@ -1196,6 +1319,7 @@ function agentResponseToChatMessage(response: AgentResponse): ChatMessage {
       followupMode: response.mode,
       content: response.intro,
       questions: response.questions,
+      citations,
     }
   }
 
@@ -1204,6 +1328,7 @@ function agentResponseToChatMessage(response: AgentResponse): ChatMessage {
       role: 'assistant',
       kind: 'emergency',
       content: `${response.content}\n\n医生沟通摘要（可直接出示给医生）：\n${response.doctorSummary}`,
+      citations,
     }
   }
 
@@ -1212,6 +1337,7 @@ function agentResponseToChatMessage(response: AgentResponse): ChatMessage {
       role: 'assistant',
       kind: 'final_report',
       content: response.rendered,
+      citations,
     }
   }
 
@@ -1219,6 +1345,7 @@ function agentResponseToChatMessage(response: AgentResponse): ChatMessage {
     role: 'assistant',
     kind: 'stage_report',
     content: response.content,
+    citations,
   }
 }
 

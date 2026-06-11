@@ -111,7 +111,7 @@ export const followupQuestionTool = defineTool({
         type: 'differential' as const,
       }))
       if (questions.length === 0) {
-        throw new Error('没有可用的追问（missingInfo 为空且 LLM 不可用）')
+        throw new Error('没有可用的追问（missingInfo 为空且 LLM 不可用）', { cause: error })
       }
       return { intro: '为了区分几个可能方向，需要确认：', questions }
     }

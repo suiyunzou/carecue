@@ -31,7 +31,7 @@ export function collectSuccessful<T>(settled: PromiseSettledResult<T>[]): T[] {
 }
 
 export const PIPELINE_CONCURRENCY = {
-  search: 3,
-  fetch: 5,
-  evidenceExtract: 2,
+  search: 2,
+  fetch: 3,
+  evidenceExtract: 1,
 } as const

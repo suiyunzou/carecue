@@ -34,10 +34,21 @@ export interface LlmClient {
   structured<T>(options: LlmStructuredOptions<T>): Promise<T>
 }
 
+/** LLM 调用关键步骤日志，便于在后台定位"哪一步慢、花了多少 token"。AGENT_LLM_LOG=false 可关闭。 */
+function logLlm(line: string) {
+  if (process.env.AGENT_LLM_LOG !== 'false') {
+    console.log(`[LLM] ${line}`)
+  }
+}
+
 export function createOpenRouterLlmClient(): LlmClient {
   const model = process.env.OPENROUTER_MODEL?.trim() || 'deepseek/deepseek-v4-pro'
   const fallbackModel = process.env.OPENROUTER_FALLBACK_MODEL?.trim()
   const timeoutMs = Number(process.env.AI_TIMEOUT_MS ?? 20000)
+
+  // 一旦确认当前模型不支持 json_schema（response_format 报错），后续调用直接走 json_object，
+  // 避免每次调用都先发一次注定失败的 json_schema 请求（这会让每步 LLM 付出双倍延迟）。
+  let jsonSchemaDisabled = process.env.OPENROUTER_JSON_SCHEMA === 'false'
 
   const client = new OpenAI({
     baseURL: 'https://openrouter.ai/api/v1',
@@ -57,7 +68,7 @@ export function createOpenRouterLlmClient(): LlmClient {
     options: LlmStructuredOptions<T>,
     useModel: string,
     mode: 'json_schema' | 'json_object',
-  ): Promise<T> {
+  ): Promise<{ data: T; tokens: number }> {
     const completion = await client.chat.completions.create({
       model: useModel,
       messages: [
@@ -80,7 +91,7 @@ export function createOpenRouterLlmClient(): LlmClient {
     if (!parsed.success) {
       throw new LlmOutputInvalidError(`LLM 输出不符合 schema: ${parsed.error.message}`)
     }
-    return parsed.data
+    return { data: parsed.data, tokens: completion.usage?.total_tokens ?? 0 }
   }
 
   return {
@@ -91,23 +102,41 @@ export function createOpenRouterLlmClient(): LlmClient {
         throw new LlmUnavailableError()
       }
 
+      const startedAt = Date.now()
+      const useSchema = !jsonSchemaDisabled
+
       // json_schema -> json_object -> 备选模型，逐级降级
       try {
-        return await completeOnce(options, model, 'json_schema')
+        const result = await completeOnce(options, model, useSchema ? 'json_schema' : 'json_object')
+        logLlm(`${options.schemaName} ✓ ${model} ${useSchema ? 'schema' : 'json'} ${Date.now() - startedAt}ms ${result.tokens}tok`)
+        return result.data
       } catch (error) {
-        if (error instanceof LlmOutputInvalidError || isResponseFormatError(error)) {
+        const formatError = isResponseFormatError(error)
+        if (formatError && !jsonSchemaDisabled) {
+          jsonSchemaDisabled = true
+          logLlm(`检测到模型不支持 json_schema，后续调用改用 json_object 模式`)
+        }
+        if (error instanceof LlmOutputInvalidError || formatError) {
           try {
-            return await completeOnce(options, model, 'json_object')
+            const result = await completeOnce(options, model, 'json_object')
+            logLlm(`${options.schemaName} ✓ ${model} json(降级) ${Date.now() - startedAt}ms ${result.tokens}tok`)
+            return result.data
           } catch (secondError) {
             if (fallbackModel) {
-              return await completeOnce(options, fallbackModel, 'json_object')
+              const result = await completeOnce(options, fallbackModel, 'json_object')
+              logLlm(`${options.schemaName} ✓ ${fallbackModel} json(备选模型) ${Date.now() - startedAt}ms ${result.tokens}tok`)
+              return result.data
             }
+            logLlm(`${options.schemaName} ✗ ${Date.now() - startedAt}ms ${String(secondError).slice(0, 120)}`)
             throw secondError
           }
         }
         if (fallbackModel) {
-          return await completeOnce(options, fallbackModel, 'json_schema')
+          const result = await completeOnce(options, fallbackModel, useSchema ? 'json_schema' : 'json_object')
+          logLlm(`${options.schemaName} ✓ ${fallbackModel} ${useSchema ? 'schema' : 'json'}(备选模型) ${Date.now() - startedAt}ms ${result.tokens}tok`)
+          return result.data
         }
+        logLlm(`${options.schemaName} ✗ ${Date.now() - startedAt}ms ${String(error).slice(0, 120)}`)
         throw error
       }
     },
