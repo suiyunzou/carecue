@@ -9,7 +9,9 @@ import morgan from 'morgan'
 import { z } from 'zod'
 import { Prisma, PrismaClient } from './generated/prisma/client.ts'
 import { PrismaPg } from '@prisma/adapter-pg'
-import { createCareCueAgentRuntime, type AgentResponse, type AgentStreamEvent } from './agent/index.ts'
+import { createCareCueAgentRuntime, type AgentResponse, type AgentStreamEvent, type CaseState } from './agent/index.ts'
+import { buildStateSnapshot } from './agent/agentResponse.ts'
+import { PrismaCaseStore, persistChatTurn, isPersistableEvent } from './chatStore.ts'
 
 const adapter = new PrismaPg({
   connectionString: process.env.DATABASE_URL ?? 'postgresql://carecue:carecue@localhost:5432/carecue?schema=public',
@@ -181,7 +183,8 @@ app.delete('/api/consultations/:id', requireAuth, async (req: AuthedRequest, res
 // CareCue Agent v3.0 — CaseState 驱动的工具主循环
 // ==========================================
 
-const agentRuntime = createCareCueAgentRuntime()
+// CaseState 持久化到 PostgreSQL：页面刷新 / 服务重启后会话可恢复、可继续
+const agentRuntime = createCareCueAgentRuntime({ caseStore: new PrismaCaseStore(prisma) })
 
 const agentConsultSchema = z.object({
   caseId: z.string().uuid().optional(),
@@ -200,6 +203,12 @@ app.post('/api/agent/consult', requireAuth, async (req: AuthedRequest, res) => {
       userId: req.userId,
       userMessage: parsed.data.message,
     })
+
+    await persistChatTurn(prisma, {
+      userId: req.userId!,
+      userMessage: parsed.data.message,
+      response,
+    }).catch((error) => console.error('[Agent] persist chat turn failed', error))
 
     // 最终报告 / 急症提醒落库，供历史记录页查看
     let record: ReturnType<typeof serializeRecord> | undefined
@@ -230,8 +239,13 @@ app.post('/api/agent/consult/stream', requireAuth, async (req: AuthedRequest, re
   res.setHeader('Connection', 'keep-alive')
   res.flushHeaders()
 
+  // 过程事件随 SSE 下发的同时收集起来，随助手消息一起落库（历史还原"分析过程"用）
+  const collectedEvents: AgentStreamEvent[] = []
   const send = (event: AgentStreamEvent) => {
     res.write(`data: ${JSON.stringify(event)}\n\n`)
+    if (isPersistableEvent(event)) {
+      collectedEvents.push(event)
+    }
   }
 
   try {
@@ -241,6 +255,13 @@ app.post('/api/agent/consult/stream', requireAuth, async (req: AuthedRequest, re
       userMessage: parsed.data.message,
       onEvent: send,
     })
+
+    await persistChatTurn(prisma, {
+      userId: req.userId!,
+      userMessage: parsed.data.message,
+      response,
+      events: collectedEvents,
+    }).catch((error) => console.error('[Agent] persist chat turn failed', error))
 
     let record: ReturnType<typeof serializeRecord> | undefined
     if (response.type === 'final_report' || response.type === 'emergency') {
@@ -258,6 +279,88 @@ app.post('/api/agent/consult/stream', requireAuth, async (req: AuthedRequest, re
   } finally {
     res.end()
   }
+})
+
+// ==========================================
+// 聊天会话历史 — 列表 / 详情（含消息与状态快照）/ 删除
+// 刷新页面或从历史进入时，前端用这些接口还原完整对话并继续聊天
+// ==========================================
+
+app.get('/api/chats', requireAuth, async (req: AuthedRequest, res) => {
+  const sessions = await prisma.chatSession.findMany({
+    where: { userId: req.userId },
+    orderBy: { updatedAt: 'desc' },
+    select: {
+      id: true,
+      title: true,
+      status: true,
+      riskLevel: true,
+      createdAt: true,
+      updatedAt: true,
+      _count: { select: { messages: true } },
+    },
+  })
+
+  return res.json({
+    sessions: sessions
+      .filter((s) => s._count.messages > 0)
+      .map((s) => ({
+        id: s.id,
+        title: s.title,
+        status: s.status,
+        riskLevel: s.riskLevel,
+        messageCount: s._count.messages,
+        createdAt: s.createdAt,
+        updatedAt: s.updatedAt,
+      })),
+  })
+})
+
+app.get('/api/chats/:id', requireAuth, async (req: AuthedRequest, res) => {
+  const sessionId = paramAsString(req.params.id)
+  const session = await prisma.chatSession.findFirst({
+    where: { id: sessionId, userId: req.userId },
+    include: { messages: { orderBy: { createdAt: 'asc' } } },
+  })
+
+  if (!session) {
+    return res.status(404).json({ message: '没有找到该对话。' })
+  }
+
+  return res.json({
+    session: {
+      id: session.id,
+      title: session.title,
+      status: session.status,
+      riskLevel: session.riskLevel,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+    },
+    messages: session.messages.map((m) => ({
+      id: m.id,
+      role: m.role,
+      kind: m.kind,
+      content: m.content,
+      payload: m.payload,
+      createdAt: m.createdAt,
+    })),
+    snapshot: session.caseState ? buildStateSnapshot(session.caseState as unknown as CaseState) : null,
+  })
+})
+
+app.delete('/api/chats/:id', requireAuth, async (req: AuthedRequest, res) => {
+  const sessionId = paramAsString(req.params.id)
+  const session = await prisma.chatSession.findFirst({
+    where: { id: sessionId, userId: req.userId },
+    select: { id: true },
+  })
+
+  if (!session) {
+    return res.status(404).json({ message: '没有找到该对话。' })
+  }
+
+  await prisma.chatSession.delete({ where: { id: session.id } })
+  return res.json({ ok: true })
 })
 
 const AGENT_RISK_TO_LEGACY: Record<string, { riskLevel: string; urgencyLevel: string; urgencyTitle: string }> = {

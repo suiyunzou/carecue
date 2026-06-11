@@ -134,6 +134,8 @@ export interface CaseMeta {
   followupRounds: number
   agentSteps: number
   language: 'zh' | 'en' | 'mixed'
+  /** 用户在最近一条消息中显式要求联网搜索；执行一轮检索后立即清除 */
+  userRequestedSearch: boolean
 }
 
 export interface CaseState {
@@ -224,6 +226,7 @@ export function createInitialCaseState(caseId: string, userId?: string): CaseSta
       followupRounds: 0,
       agentSteps: 0,
       language: 'zh',
+      userRequestedSearch: false,
     },
   }
 }

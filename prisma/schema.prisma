@@ -18,8 +18,45 @@ model User {
   lastLoginAt  DateTime? @map("last_login_at")
 
   consultationRecords ConsultationRecord[]
+  chatSessions        ChatSession[]
 
   @@map("users")
+}
+
+// 聊天会话：一次完整咨询对话（id 即 Agent caseId）。
+// caseState 持久化 Agent 工作区，服务重启/页面刷新后可继续对话。
+model ChatSession {
+  id           String   @id
+  userId       String   @map("user_id")
+  title        String
+  status       String   @default("active")
+  riskLevel    String   @default("R0") @map("risk_level")
+  caseState    Json?    @map("case_state")
+  stateVersion Int      @default(1) @map("state_version")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages ChatMessage[]
+
+  @@index([userId, updatedAt])
+  @@map("chat_sessions")
+}
+
+// 聊天消息：按会话追加存储（append-only），payload 存追问/引用/过程事件等结构化内容
+model ChatMessage {
+  id        String   @id @default(uuid())
+  sessionId String   @map("session_id")
+  role      String
+  kind      String?
+  content   String
+  payload   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("chat_messages")
 }
 
 model ConsultationRecord {

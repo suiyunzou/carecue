@@ -118,13 +118,13 @@ export function assessRisk(state: CaseState): RiskAssessOutput {
   let finalLevel = computedLevel
   if (previousLevel === 'R3') {
     finalLevel = 'R3'
-    reasonParts.push('既往已确认 R3，不允许自动降级。')
+    reasonParts.push('此前已确认存在急症风险信号，风险判断不会自动下调。')
   } else if (riskRank(previousLevel) > riskRank(computedLevel)) {
     if (previousLevel === 'R2' && deniedSignals.length > 0) {
-      reasonParts.push(`关键红旗已被否认（${deniedSignals.join('、')}），风险由 R2 调整为 ${computedLevel}。若再次出现这些信号需升级处理。`)
+      reasonParts.push(`关键危险信号已被你否认（${deniedSignals.join('、')}），风险判断已相应下调。若再次出现这些信号需升级处理。`)
     } else if (previousLevel === 'R2' && state.riskProbe.unresolvedRedFlags.length > 0) {
       finalLevel = previousLevel
-      reasonParts.push('关键红旗仍未确认，维持 R2。')
+      reasonParts.push('关键危险信号仍未确认，维持需尽快就医评估的判断。')
     }
   }
 

@@ -4,8 +4,8 @@ import {
   ArrowLeft,
   ArrowRight,
   Bot,
+  Check,
   ClipboardList,
-  Copy,
   FileText,
   HeartPulse,
   History,
@@ -14,13 +14,12 @@ import {
   Loader2,
   LogOut,
   Paperclip,
-  Search,
   Send,
   ShieldCheck,
-  Sparkles,
   Stethoscope,
   Trash2,
   User,
+  X,
 } from 'lucide-react'
 import heroImage from './assets/carecue-hero.png'
 import './App.css'
@@ -33,47 +32,6 @@ type User = {
   phone: string | null
   email: string | null
   displayName: string
-}
-
-type Answer = {
-  questionKey: string
-  questionText: string
-  answerValue: string | string[]
-  answerText: string
-}
-
-type Direction = {
-  title: string
-  support: string[]
-  caution: string[]
-  suggestedAction?: string
-}
-
-type SourceReference = {
-  title: string
-  url: string
-  content?: string
-  sourceLevel?: 'A' | 'B' | 'C' | 'D'
-}
-
-type Result = {
-  aiStatus?: 'success' | 'fallback' | 'disabled' | 'error'
-  aiModel?: string
-  aiSummary?: string
-  urgencyLevel: 'A' | 'B' | 'C' | 'D'
-  riskLevel: 'high' | 'medium' | 'low'
-  urgencyTitle: string
-  urgencyAdvice: string
-  possibleDirections: Direction[]
-  missingInformation?: string[]
-  departmentSuggestion: string
-  nextSteps?: string[]
-  dailyAdvice: string[]
-  uncertaintyItems: string[]
-  doctorSummary: string
-  safetyFlags?: string[]
-  sourceReferences?: SourceReference[]
-  webSearchUsed?: boolean
 }
 
 type AgentRiskLevel = 'R0' | 'R1' | 'R2' | 'R3'
@@ -133,7 +91,7 @@ type AgentStreamEvent =
       summary?: string
     }
   | { type: 'agent_decision'; action: string; reason: string }
-  | { type: 'final'; response: AgentResponse; record?: ConsultationRecord }
+  | { type: 'final'; response: AgentResponse }
   | { type: 'error'; message: string }
 
 type ChatMessage = {
@@ -148,20 +106,42 @@ type ChatMessage = {
   citations?: AgentCitation[]
 }
 
-type ConsultationRecord = {
-  id: string
-  chiefComplaint: string
-  scenario: string
-  riskLevel: string
-  urgencyLevel?: string
-  departmentSuggestion?: string
-  createdAt: string
-  answers?: Answer[]
-  result?: Result
+/** 进行中的实时步骤（Claude/ChatGPT 式工具调用时间线） */
+type LiveStep = {
+  id: number
+  label: string
+  status: 'running' | 'done' | 'error'
 }
 
-type View = 'home' | 'auth' | 'consult' | 'aiChat' | 'history' | 'detail'
+type ChatSessionSummary = {
+  id: string
+  title: string
+  status: string
+  riskLevel: AgentRiskLevel
+  messageCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+type ChatMessageRow = {
+  id: string
+  role: 'user' | 'assistant'
+  kind: ChatMessage['kind'] | null
+  content: string
+  payload: {
+    mode?: AgentFollowupQuestion['type']
+    questions?: AgentFollowupQuestion[]
+    doctorSummary?: string
+    citations?: AgentCitation[]
+    events?: AgentStreamEvent[]
+  } | null
+  createdAt: string
+}
+
+type View = 'home' | 'auth' | 'consult' | 'aiChat' | 'history'
 type AuthStatus = 'checking' | 'authenticated' | 'anonymous'
+
+const LAST_CASE_KEY = 'carecue:lastCaseId'
 
 const examples = [
   '我爸最近总是头晕，是怎么回事？',
@@ -182,25 +162,50 @@ function App() {
   const isUrgentInput = urgentKeywords.some((keyword) => chiefComplaint.includes(keyword))
   const [caseId, setCaseId] = React.useState<string | null>(null)
   const [snapshot, setSnapshot] = React.useState<AgentSnapshot | null>(null)
-  const [activeRecord, setActiveRecord] = React.useState<ConsultationRecord | null>(null)
-  const [records, setRecords] = React.useState<ConsultationRecord[]>([])
+  const [sessions, setSessions] = React.useState<ChatSessionSummary[]>([])
   const [chatMessages, setChatMessages] = React.useState<ChatMessage[]>([])
   const [chatInput, setChatInput] = React.useState('')
   const [message, setMessage] = React.useState('')
-  const [copyLabel, setCopyLabel] = React.useState('复制摘要')
   const [isChatting, setIsChatting] = React.useState(false)
-  const [liveProcess, setLiveProcess] = React.useState<string[]>([])
+  const [liveSteps, setLiveSteps] = React.useState<LiveStep[]>([])
+
+  /** 从历史 / 刷新恢复完整对话：消息、引用、追问、分析过程、侧栏快照都可还原并继续聊天 */
+  const restoreSession = async (sessionId: string, options: { silent?: boolean } = {}) => {
+    try {
+      const data = await api<{
+        session: ChatSessionSummary
+        messages: ChatMessageRow[]
+        snapshot: AgentSnapshot | null
+      }>(`/chats/${sessionId}`)
+
+      setCaseId(data.session.id)
+      window.localStorage.setItem(LAST_CASE_KEY, data.session.id)
+      setChiefComplaint(data.session.title)
+      setSnapshot(data.snapshot)
+      setChatMessages(data.messages.map(rowToChatMessage))
+      setView('aiChat')
+    } catch (error) {
+      window.localStorage.removeItem(LAST_CASE_KEY)
+      if (!options.silent) setMessage(errorMessage(error))
+    }
+  }
 
   React.useEffect(() => {
     api<{ user: User }>('/auth/me')
-      .then((data) => {
+      .then(async (data) => {
         setUser(data.user)
         setAuthStatus('authenticated')
+        // 刷新页面后恢复上次未结束的对话（含消息、引用、侧栏快照）
+        const lastCaseId = window.localStorage.getItem(LAST_CASE_KEY)
+        if (lastCaseId) {
+          await restoreSession(lastCaseId, { silent: true })
+        }
       })
       .catch(() => {
         setUser(null)
         setAuthStatus('anonymous')
       })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const startExperience = () => {
@@ -242,27 +247,51 @@ function App() {
 
   const consultAgent = async (userMessage: string, existingCaseId: string | null) => {
     const processLines: string[] = []
-    setLiveProcess([])
+    const steps: LiveStep[] = []
+    let stepId = 0
+    setLiveSteps([])
 
     try {
       const data = await streamAgentConsult(
         { caseId: existingCaseId ?? undefined, message: userMessage },
         (event) => {
           const line = describeStreamEvent(event)
-          if (line) {
-            processLines.push(line)
-            setLiveProcess([...processLines])
+          if (line) processLines.push(line)
+
+          // 结构化实时步骤：工具开始 -> running；完成 -> done/error；其他事件 -> 即时完成项
+          if (event.type === 'tool_step') {
+            if (event.phase === 'start') {
+              steps.push({
+                id: ++stepId,
+                label: TOOL_STEP_LABELS[event.toolName] ?? event.toolName,
+                status: 'running',
+              })
+            } else {
+              const running = [...steps].reverse().find((s) => s.status === 'running')
+              if (running) {
+                running.status = event.status === 'error' ? 'error' : 'done'
+                if (event.summary) running.label = event.summary
+              }
+            }
+          } else if (line) {
+            // 把仍在 running 的状态行收尾，避免步骤悬挂
+            for (const s of steps) {
+              if (s.status === 'running' && event.type === 'status') s.status = 'done'
+            }
+            steps.push({ id: ++stepId, label: line, status: event.type === 'status' ? 'running' : 'done' })
           }
+          setLiveSteps([...steps])
         },
       )
       setCaseId(data.response.caseId)
+      window.localStorage.setItem(LAST_CASE_KEY, data.response.caseId)
       setSnapshot(data.response.stateSnapshot)
       setChatMessages((items) => [
         ...items,
         { ...agentResponseToChatMessage(data.response), process: processLines },
       ])
     } finally {
-      setLiveProcess([])
+      setLiveSteps([])
     }
   }
 
@@ -277,6 +306,7 @@ function App() {
     setCaseId(null)
     setSnapshot(null)
     setChatMessages([])
+    window.localStorage.removeItem(LAST_CASE_KEY)
     setView('aiChat')
 
     try {
@@ -311,8 +341,8 @@ function App() {
   const loadHistory = async () => {
     setMessage('')
     try {
-      const data = await api<{ records: ConsultationRecord[] }>('/consultations')
-      setRecords(data.records)
+      const data = await api<{ sessions: ChatSessionSummary[] }>('/chats')
+      setSessions(data.sessions)
       setView('history')
     } catch (error) {
       setMessage(errorMessage(error))
@@ -320,25 +350,12 @@ function App() {
     }
   }
 
-  const openRecord = async (recordId: string) => {
-    try {
-      const data = await api<{ record: ConsultationRecord }>(`/consultations/${recordId}`)
-      setActiveRecord(data.record)
-      setView('detail')
-    } catch (error) {
-      setMessage(errorMessage(error))
+  const deleteSession = async (sessionId: string) => {
+    await api(`/chats/${sessionId}`, { method: 'DELETE' })
+    setSessions((items) => items.filter((item) => item.id !== sessionId))
+    if (window.localStorage.getItem(LAST_CASE_KEY) === sessionId) {
+      window.localStorage.removeItem(LAST_CASE_KEY)
     }
-  }
-
-  const deleteRecord = async (recordId: string) => {
-    await api(`/consultations/${recordId}`, { method: 'DELETE' })
-    setRecords((items) => items.filter((item) => item.id !== recordId))
-  }
-
-  const copySummary = async (summary: string) => {
-    await navigator.clipboard.writeText(summary)
-    setCopyLabel('已复制')
-    window.setTimeout(() => setCopyLabel('复制摘要'), 1600)
   }
 
   const resetConsultation = () => {
@@ -347,7 +364,7 @@ function App() {
     setSnapshot(null)
     setChatMessages([])
     setChatInput('')
-    setActiveRecord(null)
+    window.localStorage.removeItem(LAST_CASE_KEY)
   }
 
   return (
@@ -408,7 +425,14 @@ function App() {
           <nav className="nav-actions" aria-label="主导航">
             {user ? (
               <>
-                <button className="primary-button small" onClick={() => setView('consult')} type="button">
+                <button
+                  className="primary-button small"
+                  onClick={() => {
+                    resetConsultation()
+                    setView('consult')
+                  }}
+                  type="button"
+                >
                   + 新咨询
                 </button>
                 <button className="ghost-button" onClick={loadHistory} type="button">
@@ -518,7 +542,7 @@ function App() {
           chatMessages={chatMessages}
           chiefComplaint={chiefComplaint}
           isChatting={isChatting}
-          liveProcess={liveProcess}
+          liveSteps={liveSteps}
           onBack={() => setView('consult')}
           onInputChange={setChatInput}
           onSend={sendChatMessage}
@@ -529,40 +553,29 @@ function App() {
       {view === 'history' ? (
         <section className="workspace">
           <div className="workspace-header compact-header">
-            <span className="eyebrow">历史记录</span>
-            <h1>已保存的完整整理报告</h1>
-            <p className="history-note">仅「症状处理报告」或「急症提醒」会保存；对话中的阶段性整理不会出现在这里。</p>
+            <span className="eyebrow">历史对话</span>
+            <h1>所有咨询对话都在这里</h1>
+            <p className="history-note">点开任意一条可查看完整聊天记录，并直接继续提问，不需要重新描述。</p>
           </div>
           <div className="history-list">
-            {records.length ? records.map((record) => (
-              <article className="record-row" key={record.id}>
-                <button onClick={() => openRecord(record.id)} type="button">
-                  <strong>{record.chiefComplaint}</strong>
-                  <span>{formatDate(record.createdAt)} · 风险：{record.urgencyLevel ?? record.riskLevel} · {record.departmentSuggestion ?? '待查看详情'}</span>
+            {sessions.length ? sessions.map((session) => (
+              <article className="record-row" key={session.id}>
+                <button onClick={() => restoreSession(session.id)} type="button">
+                  <strong>{session.title}</strong>
+                  <span>
+                    {formatDate(session.updatedAt)} · {RISK_LABELS[session.riskLevel] ?? '评估中'} · {session.messageCount} 条消息
+                    {session.status === 'finalized' ? ' · 已生成报告' : session.status === 'emergency' ? ' · 急症提醒' : ' · 可继续咨询'}
+                  </span>
                 </button>
-                <button className="icon-button danger" onClick={() => deleteRecord(record.id)} title="删除记录" type="button">
+                <button className="icon-button danger" onClick={() => deleteSession(session.id)} title="删除对话" type="button">
                   <Trash2 size={18} />
                 </button>
               </article>
             )) : (
-              <div className="empty-state">暂无已保存报告。完成一次咨询并生成完整报告后，会显示在这里。</div>
+              <div className="empty-state">暂无历史对话。发起一次咨询后，对话会自动保存在这里。</div>
             )}
           </div>
         </section>
-      ) : null}
-
-      {view === 'detail' && activeRecord?.result ? (
-        <ResultView
-          record={activeRecord}
-          result={activeRecord.result}
-          copyLabel={copyLabel}
-          onCopy={copySummary}
-          onNew={() => {
-            resetConsultation()
-            setView('consult')
-          }}
-          onHistory={loadHistory}
-        />
       ) : null}
     </main>
   )
@@ -780,7 +793,7 @@ function ChatView({
   chatMessages,
   chiefComplaint,
   isChatting,
-  liveProcess,
+  liveSteps,
   onBack,
   onInputChange,
   onSend,
@@ -790,7 +803,7 @@ function ChatView({
   chatMessages: ChatMessage[]
   chiefComplaint: string
   isChatting: boolean
-  liveProcess: string[]
+  liveSteps: LiveStep[]
   onBack: () => void
   onInputChange: (value: string) => void
   onSend: () => void
@@ -865,11 +878,20 @@ function ChatView({
                <div className="card-icon ai-icon"><Bot size={28} /></div>
                <div className="card-content">
                  <h3>问康 · 正在整理</h3>
-                 {liveProcess.length > 0 ? (
-                   <ul className="live-process-list">
-                     {liveProcess.map((step, stepIndex) => (
-                       <li key={stepIndex} className={stepIndex === liveProcess.length - 1 ? 'active' : ''}>
-                         {step}
+                 {liveSteps.length > 0 ? (
+                   <ul className="live-step-list">
+                     {liveSteps.map((step) => (
+                       <li key={step.id} className={`live-step ${step.status}`}>
+                         <span className="live-step-icon">
+                           {step.status === 'running' ? (
+                             <Loader2 className="spin" size={14} />
+                           ) : step.status === 'error' ? (
+                             <X size={14} />
+                           ) : (
+                             <Check size={14} />
+                           )}
+                         </span>
+                         <span className="live-step-label">{step.label}</span>
                        </li>
                      ))}
                    </ul>
@@ -988,167 +1010,11 @@ function ChatView({
   )
 }
 
-function ResultView({
-  record,
-  result,
-  copyLabel,
-  onCopy,
-  onNew,
-  onHistory,
-}: {
-  record: ConsultationRecord | null
-  result: Result
-  copyLabel: string
-  onCopy: (summary: string) => void
-  onNew: () => void
-  onHistory: () => void
-}) {
-  const isUrgent = result.urgencyLevel === 'A'
-  const missingInformation = result.missingInformation ?? []
-  const nextSteps = result.nextSteps?.length ? result.nextSteps : [result.urgencyAdvice]
-  const safetyFlags = result.safetyFlags?.length ? result.safetyFlags : result.uncertaintyItems
-  const hasAiSummary = result.aiStatus === 'success' && result.aiSummary
-  const aiStatusText = aiStatusLabel(result.aiStatus)
-  const sourceReferences = result.sourceReferences ?? []
-
-  return (
-    <section className="result-layout">
-      <div className={`urgency-banner ${isUrgent ? 'urgent' : ''}`}>
-        <AlertTriangle size={30} />
-        <div>
-          <span>紧急程度 {result.urgencyLevel}</span>
-          <h1>{result.urgencyTitle}</h1>
-          <p>{result.urgencyAdvice}</p>
-        </div>
-      </div>
-
-      {result.aiStatus && result.aiStatus !== 'success' ? (
-        <div className="ai-status-banner">
-          <Info size={20} />
-          <span>{aiStatusText}</span>
-        </div>
-      ) : null}
-
-      {hasAiSummary ? (
-        <section className="ai-summary-section">
-          <div className="section-title-row">
-            <Sparkles size={22} />
-            <h2>综合整理说明</h2>
-          </div>
-          <p>{result.aiSummary}</p>
-          {result.aiModel ? <span className="model-pill">{result.aiModel}</span> : null}
-        </section>
-      ) : null}
-
-      <section className={`verification-strip ${result.webSearchUsed ? 'active' : ''}`}>
-        <Search size={20} />
-        <div>
-          <strong>{result.webSearchUsed ? '已请求联网核查' : '未启用联网核查'}</strong>
-          <span>{result.webSearchUsed ? '报告结合了权威来源核查结果，但仍不是确诊结论。' : '当前报告基于对话症状整理与联网证据生成，不是确诊结论。'}</span>
-        </div>
-      </section>
-
-      <div className="result-grid">
-        <section className="result-section">
-          <h2>可能方向</h2>
-          {result.possibleDirections.map((direction) => (
-            <article className="direction-card" key={direction.title}>
-              <h3>{direction.title}</h3>
-              <p>支持点：{direction.support.join('；')}</p>
-              <p>仍需注意：{direction.caution.join('；')}</p>
-              {direction.suggestedAction ? <p>建议动作：{direction.suggestedAction}</p> : null}
-            </article>
-          ))}
-        </section>
-
-        <aside className="summary-panel">
-          <h2>医生沟通摘要</h2>
-          <pre>{result.doctorSummary}</pre>
-          <button className="primary-button" onClick={() => onCopy(result.doctorSummary)} type="button">
-            <Copy size={18} />
-            {copyLabel}
-          </button>
-        </aside>
-      </div>
-
-      {sourceReferences.length ? (
-        <section className="source-section">
-          <h2>核查来源</h2>
-          <div className="source-list">
-            {sourceReferences.map((source) => (
-              <a href={source.url} key={source.url} rel="noreferrer" target="_blank">
-                {source.sourceLevel ? (
-                  <span className={`source-level-badge level-${source.sourceLevel.toLowerCase()}`}>
-                    {source.sourceLevel} 级
-                  </span>
-                ) : null}
-                <strong>{source.title}</strong>
-                {source.content ? <span>{source.content}</span> : null}
-              </a>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      <div className="info-columns">
-        <section>
-          <h2>建议科室</h2>
-          <p>{result.departmentSuggestion}</p>
-        </section>
-        <section>
-          <h2>下一步</h2>
-          <ul>{nextSteps.map((item) => <li key={item}>{item}</li>)}</ul>
-        </section>
-        <section>
-          <h2>还缺哪些信息</h2>
-          {missingInformation.length ? (
-            <ul>{missingInformation.map((item) => <li key={item}>{item}</li>)}</ul>
-          ) : (
-            <p>本次信息已基本覆盖当前整理所需的关键字段。</p>
-          )}
-        </section>
-      </div>
-
-      <div className="info-columns">
-        <section>
-          <h2>日常注意</h2>
-          <ul>{result.dailyAdvice.map((item) => <li key={item}>{item}</li>)}</ul>
-        </section>
-        <section>
-          <h2>不确定项</h2>
-          <ul>{result.uncertaintyItems.map((item) => <li key={item}>{item}</li>)}</ul>
-        </section>
-        <section className="safety-section">
-          <div className="section-title-row compact">
-            <ListChecks size={20} />
-            <h2>安全边界</h2>
-          </div>
-          <ul>{safetyFlags.map((item) => <li key={item}>{item}</li>)}</ul>
-        </section>
-      </div>
-
-      {record ? (
-        <p className="record-footnote">记录已保存：{record.chiefComplaint}</p>
-      ) : null}
-
-      <div className="step-actions result-actions">
-        <button className="secondary-button" onClick={onHistory} type="button">
-          查看历史
-        </button>
-        <button className="primary-button" onClick={onNew} type="button">
-          新建咨询
-          <ArrowRight size={18} />
-        </button>
-      </div>
-    </section>
-  )
-}
-
 /** SSE 流式咨询：边收过程事件边回调，返回 final 事件 */
 async function streamAgentConsult(
   body: { caseId?: string; message: string },
   onEvent: (event: AgentStreamEvent) => void,
-): Promise<{ response: AgentResponse; record?: ConsultationRecord }> {
+): Promise<{ response: AgentResponse }> {
   const response = await fetch(`${API_BASE}/agent/consult/stream`, {
     method: 'POST',
     credentials: 'include',
@@ -1167,7 +1033,7 @@ async function streamAgentConsult(
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
-  let finalEvent: { response: AgentResponse; record?: ConsultationRecord } | null = null
+  let finalEvent: { response: AgentResponse } | null = null
 
   for (;;) {
     const { done, value } = await reader.read()
@@ -1191,7 +1057,7 @@ async function streamAgentConsult(
       }
 
       if (event.type === 'final') {
-        finalEvent = { response: event.response, record: event.record }
+        finalEvent = { response: event.response }
       } else if (event.type === 'error') {
         throw new Error(event.message)
       } else {
@@ -1216,7 +1082,8 @@ function describeStreamEvent(event: AgentStreamEvent): string | null {
         ? `已提取信息：${event.facts.map((f) => `${f.label} ${f.value}`).join('；')}`
         : null
     case 'risk_check': {
-      const parts = [`风险核查：${event.level}`]
+      // 不向用户展示内部风险码（R0-R3），统一用可读表述
+      const parts = [`风险核查：${RISK_LABELS[event.level] ?? '评估中'}`]
       if (event.confirmed.length) parts.push(`需警惕 ${event.confirmed.join('、')}`)
       if (event.denied.length) parts.push(`已排除 ${event.denied.join('、')}`)
       if (event.unresolved.length) parts.push(`待确认 ${event.unresolved.join('、')}`)
@@ -1291,20 +1158,31 @@ function formatDate(value: string) {
   }).format(new Date(value))
 }
 
-function aiStatusLabel(status: Result['aiStatus']) {
-  if (status === 'fallback') {
-    return '本次智能整理暂不可用，已给出基础安全提示与观察建议。'
+/** 把持久化的消息行还原成前端聊天消息（含追问、引用、分析过程） */
+function rowToChatMessage(row: ChatMessageRow): ChatMessage {
+  if (row.role === 'user') {
+    return { role: 'user', content: row.content }
   }
 
-  if (status === 'disabled') {
-    return '智能整理未启用，当前仅展示基础安全提示。'
+  const payload = row.payload ?? {}
+  const process = (payload.events ?? [])
+    .map((event) => describeStreamEvent(event))
+    .filter((line): line is string => Boolean(line))
+
+  let content = row.content
+  if (row.kind === 'emergency' && payload.doctorSummary) {
+    content = `${row.content}\n\n医生沟通摘要（可直接出示给医生）：\n${payload.doctorSummary}`
   }
 
-  if (status === 'error') {
-    return '智能整理返回异常，当前仅展示基础安全提示。'
+  return {
+    role: 'assistant',
+    kind: row.kind ?? undefined,
+    followupMode: payload.mode,
+    content,
+    questions: payload.questions,
+    citations: payload.citations ?? [],
+    process: process.length ? process : undefined,
   }
-
-  return ''
 }
 
 function agentResponseToChatMessage(response: AgentResponse): ChatMessage {

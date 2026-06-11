@@ -24,6 +24,7 @@ import { reportRenderer } from './report/reportRenderer.ts'
 import { buildTemplateReport } from './report/reportGenerator.ts'
 import { generateSearchTasks } from './search/searchTaskGenerator.ts'
 import { isToolResultMessage } from './messages/AgentMessage.ts'
+import { detectSearchRequest, webSearchEnabled } from './search/searchPolicy.ts'
 import type { FollowupOutput } from './question/followupGenerator.ts'
 import type { CaseAnalyzeOutput } from './analysis/hypothesisSchema.ts'
 import type { FinalReport } from './report/reportSchema.ts'
@@ -63,11 +64,23 @@ export async function runCareCueAgent(
 
   traceLogger.log(caseId, 'user_input', { input: input.userMessage })
   await messageService.appendUserMessage({ caseId, content: input.userMessage })
+  // 用户显式要求联网搜索 -> 标记本轮强制检索一次（决策层据此放行并优先检索）
+  const searchRequested = detectSearchRequest(input.userMessage) && webSearchEnabled()
   state = await caseStateService.merge(caseId, {
-    patch: { status: 'active', meta: { ...state.meta, lastUserMessageAt: new Date().toISOString() } },
+    patch: {
+      status: 'active',
+      meta: {
+        ...state.meta,
+        lastUserMessageAt: new Date().toISOString(),
+        userRequestedSearch: searchRequested,
+      },
+    },
     updateReason: 'user_message_received',
     source: 'user',
   })
+  if (searchRequested) {
+    traceLogger.log(caseId, 'user_input', { reason: '用户显式要求联网核查，本轮将强制检索一次' })
+  }
 
   const buildCtx = (): ToolContext => ({
     caseId,
@@ -191,10 +204,19 @@ export async function runCareCueAgent(
   // ---- 阶段 5：Agent 决策主循环 ----
   let searchRelaxRetryUsed = false
   let carePlanRewriteUsed = false
+  // loop engineering：上一步动作的后继路径无歧义时（如检索刚结束），跳过 LLM 决策直接走确定性策略
+  let nextDecisionDeterministic = false
 
   for (let step = 0; step < AGENT_LIMITS.maxAgentSteps; step++) {
     const contextSummary = await buildContextSummary(messageService, caseId)
-    const decision = await decideAction({ state, contextSummary, llm, traceLogger })
+    const decision = await decideAction({
+      state,
+      contextSummary,
+      llm,
+      traceLogger,
+      forceDeterministic: nextDecisionDeterministic,
+    })
+    nextDecisionDeterministic = false
 
     traceLogger.logDecision(caseId, decision)
     emit({ type: 'agent_decision', action: decision.action, reason: decision.reason })
@@ -240,7 +262,11 @@ export async function runCareCueAgent(
           state = await caseStateService.merge(caseId, {
             patch: {
               ...result.statePatch,
-              meta: { ...state.meta, searchRounds: state.meta.searchRounds + 1 },
+              meta: {
+                ...state.meta,
+                searchRounds: state.meta.searchRounds + 1,
+                userRequestedSearch: false,
+              },
             },
             updateReason: `search_failed_${result.failureCode}`,
             source: 'system',
@@ -249,7 +275,13 @@ export async function runCareCueAgent(
         }
 
         state = await caseStateService.merge(caseId, {
-          patch: result.statePatch,
+          patch: {
+            ...result.statePatch,
+            meta: {
+              ...(result.statePatch.meta ?? state.meta),
+              userRequestedSearch: false,
+            },
+          },
           updateReason: 'search_pipeline_completed',
           source: 'tool',
         })
@@ -261,6 +293,8 @@ export async function runCareCueAgent(
             credibility: e.credibility,
           })),
         })
+        // 检索后的后继路径无歧义（分析/处理建议/报告），跳过下一次 LLM 决策
+        nextDecisionDeterministic = true
         continue
       }
 

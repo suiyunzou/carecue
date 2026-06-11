@@ -50,7 +50,7 @@ export class EmergencyResponder {
 
     const content = [
       '【当前风险判断】',
-      '根据你描述的症状组合，目前存在需要立即线下处理的急症风险（R3）。',
+      '根据你描述的症状组合，目前存在需要立即线下处理的急症风险。',
       '',
       '【触发风险的症状组合】',
       triggeredCombination.length > 0 ? triggeredCombination.map((t) => `- ${t}`).join('\n') : `- ${state.risk.reason}`,

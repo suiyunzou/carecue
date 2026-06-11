@@ -3,6 +3,7 @@
 import type { CaseState } from './case/CaseState.ts'
 import type { AgentDecision } from './actionSchema.ts'
 import type { AgentFailureCode } from './failureRecovery.ts'
+import { userForcedSearchActive } from './search/searchPolicy.ts'
 
 export const AGENT_LIMITS = {
   maxAgentSteps: 7,
@@ -38,7 +39,11 @@ export const agentLimitGuard = {
       }
     }
 
-    if (decision.action === 'search_medical' && state.meta.searchRounds >= AGENT_LIMITS.maxSearchRounds) {
+    if (
+      decision.action === 'search_medical' &&
+      state.meta.searchRounds >= AGENT_LIMITS.maxSearchRounds &&
+      !userForcedSearchActive(state)
+    ) {
       return {
         allowed: false,
         failureCode: 'MAX_STEP_REACHED',

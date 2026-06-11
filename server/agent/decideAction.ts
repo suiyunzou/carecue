@@ -8,18 +8,27 @@ import type { LlmClient } from './llm/llmClient.ts'
 import { LlmUnavailableError } from './llm/llmClient.ts'
 import { buildDecideActionPrompt } from './llm/prompts/decideAction.prompt.ts'
 import type { TraceLogger } from './logs/traceLogger.ts'
+import { userForcedSearchActive, webSearchEnabled } from './search/searchPolicy.ts'
 
 export async function decideAction(input: {
   state: CaseState
   contextSummary: string
   llm: LlmClient
   traceLogger: TraceLogger
+  /** 转移路径无歧义时跳过 LLM 决策（loop engineering：策略写在代码里，省一次 LLM 往返） */
+  forceDeterministic?: boolean
 }): Promise<AgentDecision> {
   const { state, llm, traceLogger } = input
 
   // 代码硬性前置：R3 直接 emergency_stop（不交给 LLM）
   if (state.risk.level === 'R3') {
     return forcedDecision('emergency_stop', '代码红旗规则已确认 R3，停止普通分析。')
+  }
+
+  // 确定性决策模式：AGENT_DECIDE_MODE=deterministic 全程跳过 LLM 决策（最快，但不会主动追问）；
+  // forceDeterministic 用于单步快路径（如搜索完成后的下一步）
+  if (input.forceDeterministic || process.env.AGENT_DECIDE_MODE === 'deterministic') {
+    return enforceConstraints(deterministicDecision(state), state)
   }
 
   let decision: AgentDecision
@@ -46,11 +55,6 @@ export async function decideAction(input: {
   return enforceConstraints(decision, state)
 }
 
-/** 联网检索总开关：AGENT_WEB_SEARCH_ENABLED=false 时完全关闭检索以节省成本/提速。 */
-export function webSearchEnabled(): boolean {
-  return process.env.AGENT_WEB_SEARCH_ENABLED !== 'false'
-}
-
 /** 代码侧约束修正：违反选择规则的决策被改写为合法决策（§8.3） */
 export function enforceConstraints(decision: AgentDecision, state: CaseState): AgentDecision {
   // 联网检索被关闭 -> 改为基于现有信息分析/输出
@@ -58,8 +62,12 @@ export function enforceConstraints(decision: AgentDecision, state: CaseState): A
     return deterministicDecision(state, '联网检索已关闭，基于现有信息继续分析。')
   }
 
-  // 搜索超限 -> 改为分析或最终回答
-  if (decision.action === 'search_medical' && state.meta.searchRounds >= AGENT_LIMITS.maxSearchRounds) {
+  // 搜索超限 -> 改为分析或最终回答（用户显式要求时放行一次，执行后标记即被清除）
+  if (
+    decision.action === 'search_medical' &&
+    state.meta.searchRounds >= AGENT_LIMITS.maxSearchRounds &&
+    !userForcedSearchActive(state)
+  ) {
     return deterministicDecision(state, '搜索轮次已达上限，决策被修正。')
   }
 
@@ -73,13 +81,14 @@ export function enforceConstraints(decision: AgentDecision, state: CaseState): A
     return forcedDecision('ask_user', '没有症状信息，必须先向用户了解情况。')
   }
 
-  // 已有足够证据时不再重复搜索（case-flow 显示连续 2 轮搜索占 ~137s）
-  if (decision.action === 'search_medical' && state.evidence.length > 0) {
+  // 已有足够证据时不再重复搜索（case-flow 显示连续 2 轮搜索占 ~137s）；
+  // 用户显式要求联网时例外，按用户当前问题再检索一次
+  if (decision.action === 'search_medical' && state.evidence.length > 0 && !userForcedSearchActive(state)) {
     return deterministicDecision(state, '已有联网证据，跳过重复搜索。')
   }
 
-  // 没有疑似方向时不允许先搜索：应先 analyze_case
-  if (decision.action === 'search_medical' && state.hypotheses.length === 0) {
+  // 没有疑似方向时不允许先搜索：应先 analyze_case（用户显式要求时按主诉直接检索）
+  if (decision.action === 'search_medical' && state.hypotheses.length === 0 && !userForcedSearchActive(state)) {
     return forcedDecision('analyze_case', '尚无疑似方向，应先分析再按需检索。')
   }
 
@@ -99,6 +108,11 @@ export function enforceConstraints(decision: AgentDecision, state: CaseState): A
 /** 确定性决策策略（LLM 不可用 / 决策被修正时） */
 export function deterministicDecision(state: CaseState, note?: string): AgentDecision {
   const prefix = note ? `${note} ` : ''
+
+  // 0. 用户显式要求联网且本轮尚未检索 -> 优先按用户问题检索
+  if (userForcedSearchActive(state)) {
+    return forcedDecision('search_medical', `${prefix}用户显式要求联网核查，按当前问题检索权威资料。`)
+  }
 
   // 1. 没有疑似方向 -> 先 analyze_case（避免无方向时盲目搜索，见 case-flow c9397b7b）
   if (state.hypotheses.length === 0) {

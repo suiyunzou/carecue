@@ -14,7 +14,10 @@
 - JWT httpOnly Cookie 会话
 - 用户隔离的咨询记录 API（列表、详情、删除）
 - 就医前症状整理对话咨询（`POST /api/agent/consult`、`POST /api/agent/consult/stream`）
-- SSE 流式展示可审计分析过程
+- SSE 流式展示可审计分析过程（结构化工具步骤时间线）
+- 聊天会话持久化（PostgreSQL）：刷新页面 / 服务重启后可恢复并继续对话（`GET /api/chats`、`GET /api/chats/:id`、`DELETE /api/chats/:id`）
+- 用户消息显式要求联网时强制检索一轮（如"帮我联网查一下"）
+- 内部风险码（R0-R3）不出现在任何用户可见文案中
 - 红旗风险识别与急诊提示
 - Firecrawl 联网核查（需配置 `FIRECRAWL_API_KEY`）
 - OpenRouter LLM 调用、结构化输出与本地降级

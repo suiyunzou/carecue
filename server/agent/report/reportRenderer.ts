@@ -12,6 +12,7 @@ import {
   type StageReportResponse,
 } from '../agentResponse.ts'
 import { buildKnownFacts, fieldHasValue } from '../case/stateFields.ts'
+import { riskLevelLabel, sanitizeInternalCodes } from '../risk/riskPresentation.ts'
 
 const LIKELIHOOD_LABELS: Record<string, string> = {
   more_likely: '更像',
@@ -68,7 +69,7 @@ export const reportRenderer = {
 
     const sections: string[] = [
       `当前结论\n${report.currentConclusion}`,
-      `风险分级与理由\n当前风险等级：${report.riskLevel}\n${report.riskReason}${
+      `风险分级与理由\n当前风险判断：${riskLevelLabel(state.risk.level)}\n${report.riskReason}${
         report.deniedRedFlags.length > 0 ? `\n已否认的危险信号：${report.deniedRedFlags.join('、')}` : ''
       }${report.unresolvedRedFlags.length > 0 ? `\n仍待确认：${report.unresolvedRedFlags.join('、')}` : ''}`,
     ]
@@ -103,13 +104,16 @@ export const reportRenderer = {
     }
     sections.push(`医生沟通摘要（可直接出示给医生）\n${report.doctorSummary}`)
 
-    const rendered = [
-      numberSections(sections),
-      citations.length > 0
-        ? `参考依据\n${citations.map((c) => `${citationMarker(c.index)} ${c.title}`).join('\n')}`
-        : `参考依据\n${renderSearchTraceNote(state)}`,
-      `说明\n${report.uncertaintyNote}`,
-    ].join('\n\n')
+    // 最终渲染统一兜底清洗：LLM 生成段落里混入的内部风险码（R0-R3）一律替换为用户可读表述
+    const rendered = sanitizeInternalCodes(
+      [
+        numberSections(sections),
+        citations.length > 0
+          ? `参考依据\n${citations.map((c) => `${citationMarker(c.index)} ${c.title}`).join('\n')}`
+          : `参考依据\n${renderSearchTraceNote(state)}`,
+        `说明\n${report.uncertaintyNote}`,
+      ].join('\n\n'),
+    )
 
     return withResponseMeta(state, {
       type: 'final_report',
@@ -150,9 +154,9 @@ export const reportRenderer = {
       type: 'emergency',
       caseId: state.caseId,
       riskLevel: 'R3',
-      content,
+      content: sanitizeInternalCodes(content),
       triggeredCombination: state.risk.redFlags,
-      doctorSummary,
+      doctorSummary: sanitizeInternalCodes(doctorSummary),
       stateSnapshot: buildStateSnapshot(state),
     })
   },
@@ -173,7 +177,7 @@ export const reportRenderer = {
       parts.push(`目前了解到：\n${facts.map((f) => `- ${f.label}：${f.value}`).join('\n')}`)
     }
 
-    const riskLines = [`当前风险评估：${state.risk.level}。${state.risk.reason}`]
+    const riskLines = [`当前风险评估：${riskLevelLabel(state.risk.level)}。${sanitizeInternalCodes(state.risk.reason)}`]
     if (state.riskProbe.redFlagConfirmed.length > 0) {
       riskLines.push(`需要警惕的信号：${state.riskProbe.redFlagConfirmed.join('、')}`)
     }
@@ -219,7 +223,7 @@ export const reportRenderer = {
       type: 'stage_report',
       caseId: state.caseId,
       riskLevel: state.risk.level,
-      content: parts.join('\n\n'),
+      content: sanitizeInternalCodes(parts.join('\n\n')),
       reason: input.reason,
       failureCode: input.failureCode,
       nextStepHints: hints,

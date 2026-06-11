@@ -1359,20 +1359,56 @@ textarea {
 }
 
 /* 流式分析中：实时过程 */
-.live-process-list {
+/* 实时工具步骤时间线（Claude/ChatGPT 式：spinner=进行中，✓=完成，✗=失败） */
+.live-step-list {
   margin: 0;
-  padding-left: 18px;
+  padding: 0;
+  list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
   font-size: 14px;
   line-height: 1.5;
+}
+
+.live-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   color: var(--muted-ink);
 }
 
-.live-process-list li.active {
+.live-step-icon {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  border-radius: 50%;
+}
+
+.live-step.running {
   color: #08766f;
   font-weight: 600;
+}
+
+.live-step.running .live-step-icon {
+  color: #08766f;
+}
+
+.live-step.done .live-step-icon {
+  color: #fff;
+  background: #19a974;
+}
+
+.live-step.error .live-step-icon {
+  color: #fff;
+  background: #c0563a;
+}
+
+.live-step.error {
+  color: #a13b2a;
 }
 
 /* 侧栏：已确认的信息 */

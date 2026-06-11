@@ -550,6 +550,52 @@ const tests: TestCase[] = [
     },
   },
   {
+    // 内部风险码（R0-R3）不允许出现在任何用户可见文本中
+    name: '安全：用户可见输出不包含内部风险码 R0-R3',
+    run: async () => {
+      // 阶段性/最终输出路径
+      const { runtime } = createRuntime()
+      const response = await runtime.run({ userMessage: '熬夜之后有点头胀，今天好多了。' })
+      const visibleText =
+        response.type === 'followup'
+          ? response.intro
+          : response.type === 'final_report'
+            ? response.rendered
+            : response.type === 'stage_report'
+              ? response.content
+              : ''
+      assert.ok(!/R[0-3](?![0-9A-Za-z])/.test(visibleText), `输出泄漏内部风险码：${visibleText.slice(0, 200)}`)
+      assert.ok(!/R[0-3](?![0-9A-Za-z])/.test(response.stateSnapshot.riskReason), '快照 riskReason 泄漏内部码')
+
+      // 急症输出路径
+      const emergency = await createRuntime().runtime.run({
+        userMessage: '胸口压榨性疼痛持续 20 分钟，左臂也疼，出冷汗，有点喘不上气。',
+      })
+      assert.equal(emergency.type, 'emergency')
+      if (emergency.type === 'emergency') {
+        assert.ok(!/R[0-3](?![0-9A-Za-z])/.test(emergency.content), '急症输出泄漏内部风险码')
+      }
+    },
+  },
+  {
+    // 用户显式要求联网搜索 -> 即使尚无疑似方向也强制检索一次，且只检索一次
+    name: '搜索：用户显式要求联网时强制检索，执行后标记清除',
+    run: async () => {
+      const { runtime, search } = createRuntime()
+      const response = await runtime.run({
+        userMessage: '眼睛有点干涩发胀，帮我联网搜索一下权威资料怎么处理。',
+      })
+
+      assert.ok(search.calls.length > 0, '用户显式要求联网时应执行检索')
+      assert.ok(['final_report', 'stage_report', 'followup'].includes(response.type))
+
+      // 第二轮普通消息不应再次触发检索（searchRounds 已达上限且无显式要求）
+      const callsAfterFirst = search.calls.length
+      await runtime.run({ caseId: response.caseId, userMessage: '大概持续两三天了，不严重。' })
+      assert.equal(search.calls.length, callsAfterFirst, '无显式要求时不应重复检索')
+    },
+  },
+  {
     // 用药边界分析器单元测试（§25.4 / §29）
     name: '单元：findMedicationViolations 检出剂量/疗程/停药/疗效承诺/劝阻就医',
     run: async () => {

@@ -4,6 +4,7 @@ import type { CaseState, FollowupQuestion } from './case/CaseState.ts'
 import type { RiskLevel } from './risk/riskLevel.ts'
 import type { FinalReport } from './report/reportSchema.ts'
 import { buildKnownFacts, fieldHasValue } from './case/stateFields.ts'
+import { sanitizeInternalCodes } from './risk/riskPresentation.ts'
 
 export type Citation = {
   index: number
@@ -89,7 +90,7 @@ export function buildStateSnapshot(state: CaseState): AgentResponseBase['stateSn
     chiefComplaint: state.symptoms.chiefComplaint,
     primaryDomain: state.symptomDomain.primaryDomain,
     riskLevel: state.risk.level,
-    riskReason: state.risk.reason,
+    riskReason: sanitizeInternalCodes(state.risk.reason),
     inRiskProbe: state.riskProbe.probeStatus === 'in_progress',
     knownFacts: buildKnownFacts(state),
     hypotheses: state.hypotheses.map((h) => ({ name: h.name, likelihood: h.likelihood })),
