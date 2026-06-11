@@ -1,5 +1,5 @@
 // CaseState 服务 — 串行合并 + 版本管理
-// 存储抽象：默认内存实现（P0），后续可替换为 Prisma/PostgreSQL（见 db/schema.sql）。
+// 存储抽象：测试用内存实现；服务端使用 PrismaCaseStore（server/chatStore.ts）持久化到 PostgreSQL。
 
 import { randomUUID } from 'node:crypto'
 import type { CaseState, CaseStateUpdateOutput, FollowupQuestion } from './CaseState.ts'

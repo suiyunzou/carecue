@@ -1,8 +1,8 @@
 # 问康 CareCue 技术设计文档
 
-版本：v1.0
-日期：2026-06-10
-状态：Agent 3.0 后端与前端对话界面已完成对接，文案对齐「就医前症状整理」定位。
+版本：v1.1
+日期：2026-06-12
+状态：Agent 3.0 对话链路 + 聊天会话持久化（刷新/重启可续聊）+ 工具调用流式展示 + 内部码不外泄已上线。
 
 ## 1. 技术架构总览
 
@@ -87,6 +87,15 @@ OpenRouter (DeepSeek 模型) + Firecrawl (权威检索)
 │ 及选项按钮 │    │ 含引用链接    │
 └────────────┘    └───────────────┘
 ```
+
+### 2.4 决策层 loop engineering（参考 Claude Code 单主循环设计）
+
+借鉴 Claude Code「策略写在代码里而不是靠模型」的工程实践：
+
+1. **代码约束修正（enforceConstraints）：** LLM 决策违反规则（搜索超限、无症状先分析等）时被代码改写为合法决策，不重试 LLM。
+2. **确定性快路径：** 转移路径无歧义的步骤跳过 LLM 决策——检索完成后的下一步（分析/处理建议/报告）直接走代码确定性策略，每轮节省一次 LLM 往返。
+3. **决策模式开关：** `AGENT_DECIDE_MODE=deterministic` 全程跳过 LLM 决策（最快路径，代价是不会主动生成鉴别追问）。
+4. **json_schema 记忆性降级：** 首次遇到模型不支持结构化输出的报错后，后续调用直接用 `json_object`，避免每步付出双倍延迟。
 
 ## 3. 环节设计：AI 驱动 vs 代码规则
 
@@ -301,7 +310,16 @@ OPENROUTER_FALLBACK_MODEL="deepseek/deepseek-v4-flash"
 OPENROUTER_REFERER="http://localhost:5173"
 OPENROUTER_APP_TITLE="CareCue"
 AI_TIMEOUT_MS="20000"
+# 模型不支持 json_schema 时设 false，跳过注定失败的首次请求（运行期遇错也会自动记忆降级）
+OPENROUTER_JSON_SCHEMA="true"
 FIRECRAWL_API_KEY=""
+# 联网检索总开关：false 时 Agent 完全跳过联网核查（省成本/提速）
+AGENT_WEB_SEARCH_ENABLED="true"
+# 决策模式：llm（默认）| deterministic（全程代码确定性决策，最快但不主动追问）
+AGENT_DECIDE_MODE="llm"
+# LLM 调用步骤日志（每步耗时/token），默认开启；AGENT_TRACE_VERBOSE 打开全量 Trace
+AGENT_LLM_LOG="true"
+AGENT_TRACE_VERBOSE="false"
 ```
 
 **要求：**
@@ -425,7 +443,13 @@ const searchResponse = await app.search(
 );
 ```
 
-### 7.3 并发优化
+### 7.3 检索触发策略（searchPolicy）
+
+- **按需检索：** 默认每个会话最多 1 轮检索（2 个 query、4 个来源），且必须先有疑似方向再检索。
+- **用户显式请求：** 用户消息包含「联网/搜索/查一下/最新指南」等意图时，强制检索一轮（即使尚无疑似方向或轮次已用完），执行后立即清除标记防止循环；R3 急症时仍不检索。
+- **总开关：** `AGENT_WEB_SEARCH_ENABLED=false` 完全关闭联网核查，报告标注「未经联网核验」。
+
+### 7.4 并发优化
 
 多个 searchQueries 使用 `Promise.allSettled` 并发调用：
 
@@ -455,16 +479,25 @@ async function executeSearches(queries: string[]) {
 3. **追问分型：** `risk_probe` / `differential` / `care_plan` 对应不同卡片标题，不让用户感觉在填问卷。
 4. **症状域可读化：** `chest_pain` 等内部码映射为「胸痛胸闷」等中文标签。
 5. **降级提示：** LLM 不可用时不提「规则分析」，改为「智能整理暂不可用，已给出基础安全提示」。
-6. **历史记录：** 明确仅 `final_report` / `emergency` 落库；阶段性整理不进入历史列表。
+6. **历史对话：** 所有对话整体落库；历史页为对话列表，点开可还原完整聊天并继续提问。
+7. **内部风险码不外泄：** R0-R3 不允许出现在任何用户可见文案。服务端 `risk/riskPresentation.ts` 统一映射（如 R1→「低风险，可先观察」）+ 渲染出口兜底正则清洗；源头文案（riskAssessor / 急症输出）已同步修正；前端流式事件同样使用可读标签。`riskLevel` 字段仅用于前端样式逻辑，不直接渲染。
 
 ### 8.2 聊天互动窗口（适老化）
 
-1. **加载态：** 默认「正在整理症状并核查风险信号」；SSE `status` 事件逐步追加到「分析过程」列表（可折叠）。
-2. **侧栏：** 展示已确认信息、风险等级（R0–R3 中文说明）、可能方向、待补充、联网核查来源。
-3. **输入区底部：** 「信息足够时会自动生成可带去医院整理的症状处理报告；以上内容均非确诊结论。」
-4. **追问交互：** 当前为对话文本输入；大按钮选项为后续增强项。
+1. **实时工具步骤时间线：** SSE 事件（`status` / `tool_step` / `search_query` / `search_result` / `agent_decision` / `risk_check`）渲染为结构化步骤列表——进行中显示 spinner、完成显示 ✓、失败显示 ✗（参考 Claude/ChatGPT 工具卡片模式）；完成后过程折叠保存在该条回复的「分析过程」中。
+2. **侧栏：** 展示已确认信息、风险等级（中文可读说明）、可能方向、待补充信息。
+3. **引用展示：** 联网来源以正文角标①②③ + 回复下方短链接脚注（标题 + 权威等级徽章）呈现。
+4. **输入区：** Enter 发送、Shift+Enter 换行；发送中按钮显示旋转加载图标。
+5. **追问交互：** 当前为对话文本输入；大按钮选项为后续增强项。
 
-### 8.3 结果页结构（历史详情）
+### 8.3 会话恢复（刷新 / 历史续聊）
+
+1. 浏览器 `localStorage` 仅保存当前会话 ID（`carecue:lastCaseId`），内容全部在服务端。
+2. 刷新页面：自动调 `GET /api/chats/:id` 还原消息、引用、分析过程与侧栏快照，直接回到聊天页。
+3. 历史页：`GET /api/chats` 对话列表 → 点开还原 → 继续提问（同一 caseId 继续 Agent 推理，不重复消耗 token）。
+4. 新咨询 / 删除会话时清除本地会话 ID。
+
+### 8.4 最终报告结构（对话内呈现）
 
 1. **顶部风险横幅：** 紧急程度 A/B/C/D + 风险标题 + 行动建议。
 2. **综合整理说明：** 替代原「AI 综合分析」标题。
@@ -475,17 +508,33 @@ async function executeSearches(queries: string[]) {
 
 ## 9. 数据存储
 
-### 9.1 最小表设计
+### 9.1 表设计
 
 | 表 | 作用 | 阶段 |
 | --- | --- | --- |
 | users | 用户登录身份和基础信息 | 阶段 2 |
-| consultation_records | 一次咨询的主记录 | 阶段 2 |
+| chat_sessions | 聊天会话（id 即 Agent caseId）：标题、状态、风险等级、CaseState JSON 快照 | 已上线 |
+| chat_messages | 会话消息（append-only）：用户/助手消息 + payload（追问、引用、过程事件） | 已上线 |
+| consultation_records | 一次咨询的主记录（最终报告/急症落库） | 阶段 2 |
 | consultation_answers | 追问问题和用户回答 | 阶段 2 |
 | consultation_results | 风险等级、可能方向、科室建议、医生摘要 | 阶段 2 |
 | patient_profiles | 本人或家人健康画像 | 阶段 5 |
-| source_references | 联网检索来源 | 阶段 4 |
-| model_runs | 模型调用、Prompt 版本、输出状态 | 阶段 3 |
+
+### 9.1.1 会话持久化设计（参考 Claude Code 追加式会话存储）
+
+两层数据，各司其职：
+
+1. **`chat_sessions.case_state`（Agent 工作区）：** `CaseState` 整体 JSON 快照（症状、风险、证据、已问问题、疑似方向、轮次计数），由 `PrismaCaseStore`（`server/chatStore.ts`）在每次状态合并后落库。**这是续聊的关键**：服务重启或用户隔天回来，Agent 从 DB 加载状态继续推理，不重复消耗 LLM token。
+2. **`chat_messages`（展示层）：** 每轮对话追加用户消息 + 助手回复；助手消息 payload 存追问列表、引用脚注、SSE 过程事件，前端可零成本还原完整 UI（含「分析过程」折叠区）。
+
+**API：**
+
+| 接口 | 作用 |
+| --- | --- |
+| `GET /api/chats` | 当前用户对话列表（标题、状态、风险、消息数、更新时间） |
+| `GET /api/chats/:id` | 单个对话：消息列表 + 侧栏状态快照 |
+| `DELETE /api/chats/:id` | 删除对话（级联删除消息） |
+| `POST /api/agent/consult(/stream)` | 发消息（带 `caseId` 即续聊）；服务端同步落库本轮消息 |
 
 ### 9.2 consultation_results 扩展字段
 
@@ -500,9 +549,9 @@ async function executeSearches(queries: string[]) {
 
 ### 9.3 数据原则
 
-- 核心业务数据不存浏览器 localStorage
+- 核心业务数据不存浏览器 localStorage（本地仅存当前会话 ID 用于刷新恢复）
 - 前端只保存短期登录态和必要界面状态
-- 健康数据按用户 ID 隔离
+- 健康数据按用户 ID 隔离（chat_sessions / chat_messages 均按 userId 校验）
 - 后续涉及敏感信息加密、审计日志和数据导出删除
 
 ## 10. 错误处理与 Fallback
@@ -529,19 +578,22 @@ async function executeSearches(queries: string[]) {
 
 ```
 server/
-  index.ts              # Express 入口（auth、历史记录、agent consult/stream）
-  auth.ts               # 登录注册鉴权
-  db.ts                 # Prisma 客户端
+  index.ts              # Express 入口（auth、聊天会话 API、agent consult/stream、记录落库）
+  chatStore.ts          # 会话持久化：PrismaCaseStore + 消息落库（persistChatTurn）
   source-whitelist.ts   # 联网核查来源白名单
   agent/                # Agent 3.0 全模块
-    index.ts            # 运行时入口
-    agentLoop.ts        # 主循环（抽取→分析→搜索→追问/报告）
-    case/               # CaseState 合并与字段人性化
+    index.ts            # 运行时装配入口
+    agentLoop.ts        # 主循环（抽取→风险→决策→工具→追问/报告）
+    decideAction.ts     # LLM 决策 + 代码约束修正 + 确定性策略
+    agentLimits.ts      # 步数/搜索/追问限额守卫
+    case/               # CaseState 合并、存储抽象与字段人性化
     symptoms/           # 症状抽取与域分类
-    risk/               # 红旗规则与风险研判
-    search/             # Firecrawl 检索流水线
-    report/             # 阶段/最终报告渲染
-    llm/                # OpenRouter 客户端与 Prompt
+    risk/               # 红旗规则、风险研判、riskPresentation（用户侧文案）
+    search/             # Firecrawl 检索流水线 + searchPolicy（开关/显式请求）
+    report/             # 阶段/最终报告渲染（引用角标、内部码清洗）
+    safety/             # 急症/报告/用药边界守卫
+    llm/                # OpenRouter 客户端（步骤日志、记忆性降级）与 Prompt
+    logs/               # 全链路 TraceLogger
     agent.v3.test.ts    # Agent 单元测试
 ```
 
@@ -549,7 +601,7 @@ server/
 
 ```
 src/
-  App.tsx               # 主应用（对话咨询、SSE 过程、结果页、历史记录）
+  App.tsx               # 主应用（对话咨询、SSE 工具步骤时间线、历史对话续聊、刷新恢复）
   main.tsx              # React 入口
 ```
 

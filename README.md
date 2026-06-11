@@ -18,12 +18,13 @@
 - 聊天会话持久化（PostgreSQL）：刷新页面 / 服务重启后可恢复并继续对话（`GET /api/chats`、`GET /api/chats/:id`、`DELETE /api/chats/:id`）
 - 用户消息显式要求联网时强制检索一轮（如"帮我联网查一下"）
 - 内部风险码（R0-R3）不出现在任何用户可见文案中
+- 联网来源以正文角标①②③ + 回复下方短链接脚注展示
 - 红旗风险识别与急诊提示
-- Firecrawl 联网核查（需配置 `FIRECRAWL_API_KEY`）
-- OpenRouter LLM 调用、结构化输出与本地降级
-- 历史咨询列表、详情、删除
+- Firecrawl 联网核查（需配置 `FIRECRAWL_API_KEY`；`AGENT_WEB_SEARCH_ENABLED=false` 可整体关闭）
+- OpenRouter LLM 调用、结构化输出与本地降级（LLM 步骤耗时日志、json_schema 记忆性降级）
+- 历史对话列表、还原、续聊、删除
 - 注册、登录、Cookie 会话和受保护接口 API 集成测试
-- Agent 3.0 单元测试（状态合并、风险、搜索失败恢复等）
+- Agent 3.0 单元测试（状态合并、风险、搜索失败恢复、内部码不泄漏、显式联网检索等）
 - Vite 同源 `/api` 代理，避免本地 `localhost` / `127.0.0.1` Cookie 会话不一致
 
 ## 文档
@@ -82,9 +83,10 @@ npm run build
 ## 下一步计划
 
 1. 固化回归：每次改动后运行 `npm run test:api`、`npm run test:agent`、`npm run lint`、`npm run typecheck:api`、`npm run build`。
-2. 做移动端和宽屏 UI 验收：重点检查对话区、分析过程侧栏和结果页是否溢出或遮挡。
-3. 优化错误提示：区分网络异常、登录失效、重复注册、错误密码。
-4. 完善联网核查：配置 `FIRECRAWL_API_KEY`，验收来源白名单与引用展示。
+2. 追问选项按钮交互：追问以大按钮选项呈现，降低长辈输入压力。
+3. 响应速度持续优化：利用 LLM 步骤日志定位瓶颈，目标单轮 1 分钟内。
+4. 做移动端和宽屏 UI 验收：重点检查对话区、实时步骤时间线和报告是否溢出或遮挡。
+5. 优化错误提示：区分网络异常、登录失效、重复注册、错误密码。
 
 ## 阶段边界
 
