@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>问康 CareCue · 就医前症状整理与健康咨询助手</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;800;900&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --paper: #faf6ee;
+  --paper-deep: #f3ecdd;
+  --ink: #1d3331;
+  --ink-soft: #56716d;
+  --teal: #0a6e66;
+  --teal-deep: #084e49;
+  --teal-soft: #d9eae6;
+  --coral: #e8704f;
+  --sand: #e9dfc8;
+  --line: rgba(10, 110, 102, 0.16);
+  --serif: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  --sans: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--sans);
+  background:
+    radial-gradient(1100px 520px at 88% -8%, rgba(10, 110, 102, 0.10), transparent 62%),
+    radial-gradient(900px 460px at -12% 30%, rgba(232, 112, 79, 0.07), transparent 60%),
+    var(--paper);
+  color: var(--ink);
+  line-height: 1.75;
+  overflow-x: hidden;
+}
+
+/* 纸面细网格 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(10, 110, 102, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(10, 110, 102, 0.035) 1px, transparent 1px);
+  background-size: 44px 44px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+main, header, footer { position: relative; z-index: 1; }
+
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 28px; }
+
+/* ============ 顶部导航 ============ */
+.topnav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  backdrop-filter: blur(10px);
+  background: rgba(250, 246, 238, 0.86);
+  border-bottom: 1px solid var(--line);
+}
+.topnav .wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  text-decoration: none;
+  color: var(--ink);
+}
+.brand-mark {
+  width: 36px; height: 36px;
+  border-radius: 11px;
+  background: var(--teal);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(10, 110, 102, 0.28);
+}
+.brand strong { font-family: var(--serif); font-size: 19px; letter-spacing: 1px; }
+.brand small { display: block; font-size: 11px; color: var(--ink-soft); letter-spacing: 2.5px; line-height: 1; }
+.nav-links { display: flex; gap: 26px; align-items: center; }
+.nav-links a { color: var(--ink-soft); text-decoration: none; font-size: 14.5px; transition: color .2s; }
+.nav-links a:hover { color: var(--teal); }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--teal);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 500;
+  padding: 11px 24px;
+  border-radius: 100px;
+  text-decoration: none;
+  border: none;
+  cursor: pointer;
+  transition: transform .2s ease, box-shadow .2s ease, background .2s;
+  box-shadow: 0 8px 20px rgba(10, 110, 102, 0.24);
+}
+.btn:hover { transform: translateY(-2px); background: var(--teal-deep); box-shadow: 0 12px 26px rgba(10, 110, 102, 0.3); }
+.btn.ghost {
+  background: transparent;
+  color: var(--teal);
+  border: 1.5px solid var(--teal);
+  box-shadow: none;
+}
+.btn.ghost:hover { background: var(--teal-soft); }
+
+/* ============ Hero ============ */
+.hero { padding: 84px 0 56px; }
+.hero-grid {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 56px;
+  align-items: center;
+}
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  letter-spacing: 3px;
+  color: var(--teal);
+  font-weight: 700;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,0.6);
+  padding: 7px 16px;
+  border-radius: 100px;
+}
+.hero h1 {
+  font-family: var(--serif);
+  font-weight: 900;
+  font-size: clamp(38px, 5vw, 56px);
+  line-height: 1.28;
+  margin: 26px 0 18px;
+  letter-spacing: 1px;
+}
+.hero h1 em {
+  font-style: normal;
+  color: var(--teal);
+  position: relative;
+  white-space: nowrap;
+}
+.hero h1 em::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 6px;
+  height: 10px;
+  background: rgba(232, 112, 79, 0.28);
+  z-index: -1;
+  border-radius: 3px;
+}
+.hero p.lede { font-size: 18px; color: var(--ink-soft); max-width: 33em; }
+.hero-cta { display: flex; gap: 14px; margin-top: 34px; flex-wrap: wrap; }
+.hero-img {
+  position: relative;
+}
+.hero-img img {
+  width: 100%;
+  border-radius: 22px;
+  box-shadow: 0 30px 70px rgba(29, 51, 49, 0.18);
+  border: 1px solid rgba(255,255,255,0.7);
+}
+.hero-img::after {
+  content: '';
+  position: absolute;
+  inset: 18px -18px -18px 18px;
+  border: 2px solid var(--line);
+  border-radius: 24px;
+  z-index: -1;
+}
+/* 心电图装饰线 */
+.ecg {
+  position: absolute;
+  left: -34px;
+  bottom: -26px;
+  width: 200px;
+  height: 56px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 14px 30px rgba(29,51,49,.12);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.ecg svg { width: 88%; }
+.ecg path {
+  fill: none;
+  stroke: var(--coral);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-dasharray: 320;
+  stroke-dashoffset: 320;
+  animation: ecg-draw 2.8s linear infinite;
+}
+@keyframes ecg-draw { to { stroke-dashoffset: -320; } }
+
+.trust-strip {
+  margin-top: 64px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.66);
+}
+.trust-strip > div {
+  padding: 20px 26px;
+  display: flex;
+  gap: 13px;
+  align-items: flex-start;
+}
+.trust-strip > div + div { border-left: 1px solid var(--line); }
+.trust-strip .ti {
+  width: 38px; height: 38px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  background: var(--teal-soft);
+  color: var(--teal);
+  display: grid;
+  place-items: center;
+}
+.trust-strip strong { display: block; font-size: 15.5px; }
+.trust-strip span { font-size: 13px; color: var(--ink-soft); line-height: 1.6; display: block; margin-top: 2px; }
+
+/* ============ 章节通用 ============ */
+section { padding: 86px 0; }
+.sec-head { max-width: 620px; margin-bottom: 50px; }
+.sec-head .kicker {
+  font-size: 13px;
+  letter-spacing: 4px;
+  color: var(--coral);
+  font-weight: 700;
+}
+.sec-head h2 {
+  font-family: var(--serif);
+  font-weight: 800;
+  font-size: clamp(28px, 3.4vw, 38px);
+  margin: 12px 0 14px;
+  letter-spacing: 1px;
+}
+.sec-head p { color: var(--ink-soft); font-size: 16px; }
+
+/* ============ 痛点 ============ */
+.pain-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+.pain-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 30px 28px;
+  position: relative;
+  overflow: hidden;
+  transition: transform .25s ease, box-shadow .25s ease;
+}
+.pain-card:hover { transform: translateY(-5px); box-shadow: 0 20px 44px rgba(29,51,49,.1); }
+.pain-card .q {
+  font-family: var(--serif);
+  font-size: 64px;
+  font-weight: 900;
+  color: var(--paper-deep);
+  position: absolute;
+  top: 2px; right: 18px;
+  line-height: 1;
+}
+.pain-card h3 { font-size: 18.5px; margin-bottom: 10px; position: relative; }
+.pain-card p { font-size: 14.5px; color: var(--ink-soft); position: relative; }
+
+/* ============ 动态对话演示 ============ */
+.demo-section { background: linear-gradient(180deg, transparent, rgba(10,110,102,.05) 18%, rgba(10,110,102,.05) 82%, transparent); }
+.demo-grid {
+  display: grid;
+  grid-template-columns: 0.95fr 1.05fr;
+  gap: 48px;
+  align-items: start;
+}
+.phone {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  box-shadow: 0 34px 80px rgba(29,51,49,.16);
+  overflow: hidden;
+  max-width: 460px;
+}
+.phone-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  background: var(--teal);
+  color: #fff;
+}
+.phone-bar .dot { width: 9px; height: 9px; border-radius: 50%; background: rgba(255,255,255,.45); }
+.phone-bar strong { font-size: 14.5px; font-weight: 500; margin-left: 4px; }
+.phone-screen {
+  padding: 20px 18px 22px;
+  min-height: 470px;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  background:
+    radial-gradient(420px 200px at 100% 0%, rgba(10,110,102,.05), transparent),
+    #fdfbf6;
+}
+.bubble {
+  max-width: 86%;
+  padding: 12px 16px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.7;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity .45s ease, transform .45s ease;
+}
+.bubble.show { opacity: 1; transform: none; }
+.bubble.user {
+  align-self: flex-end;
+  background: var(--teal);
+  color: #fff;
+  border-bottom-right-radius: 5px;
+}
+.bubble.ai {
+  align-self: flex-start;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-bottom-left-radius: 5px;
+  box-shadow: 0 8px 18px rgba(29,51,49,.06);
+}
+.bubble.ai .sup {
+  color: var(--teal);
+  font-weight: 700;
+  font-size: 12px;
+  vertical-align: super;
+}
+.cite-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 9px;
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  padding: 4px 10px;
+  border-radius: 100px;
+}
+.cite-chip b { color: #fff; background: #19a974; font-size: 10px; padding: 1px 6px; border-radius: 100px; font-weight: 700; }
+
+.steps-box {
+  align-self: flex-start;
+  width: 86%;
+  background: #fff;
+  border: 1px dashed rgba(10,110,102,.35);
+  border-radius: 14px;
+  padding: 11px 14px;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity .45s ease, transform .45s ease;
+}
+.steps-box.show { opacity: 1; transform: none; }
+.steps-box .steps-title { font-size: 12px; letter-spacing: 2px; color: var(--teal); font-weight: 700; margin-bottom: 7px; }
+.step-row {
+  display: none;
+  align-items: center;
+  gap: 9px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  padding: 4px 0;
+}
+.step-row.visible { display: flex; }
+.step-ico {
+  width: 17px; height: 17px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.step-row.running { color: var(--teal); font-weight: 600; }
+.step-row.running .step-ico::before {
+  content: '';
+  width: 12px; height: 12px;
+  border: 2px solid var(--teal);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.step-row.done .step-ico { background: #19a974; }
+.step-row.done .step-ico::before {
+  content: '';
+  width: 5px; height: 9px;
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+/* 演示右侧说明卡 */
+.demo-side { display: flex; flex-direction: column; gap: 18px; }
+.side-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 22px 24px;
+  opacity: 0;
+  transform: translateX(22px);
+  transition: opacity .5s ease, transform .5s ease;
+}
+.side-card.show { opacity: 1; transform: none; }
+.side-card .sc-tag {
+  font-size: 12px;
+  letter-spacing: 2.5px;
+  color: var(--coral);
+  font-weight: 700;
+}
+.side-card h4 { font-size: 17px; margin: 7px 0 6px; }
+.side-card p { font-size: 14px; color: var(--ink-soft); }
+.risk-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  background: var(--teal-soft);
+  color: var(--teal-deep);
+  font-size: 13.5px;
+  font-weight: 700;
+  padding: 7px 16px;
+  border-radius: 100px;
+}
+.risk-pill::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #19a974; }
+.demo-note { font-size: 13px; color: var(--ink-soft); margin-top: 4px; }
+.replay {
+  margin-top: 2px;
+  align-self: flex-start;
+  font-size: 13px;
+  color: var(--teal);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  font-family: var(--sans);
+}
+
+/* ============ 流程四步 ============ */
+.flow-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; position: relative; }
+.flow-grid::before {
+  content: '';
+  position: absolute;
+  top: 33px; left: 12%; right: 12%;
+  border-top: 2px dashed rgba(10,110,102,.3);
+}
+.flow-step { text-align: center; padding: 0 18px; position: relative; }
+.flow-num {
+  width: 66px; height: 66px;
+  margin: 0 auto 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--teal);
+  color: var(--teal);
+  font-family: var(--serif);
+  font-size: 26px;
+  font-weight: 900;
+  display: grid;
+  place-items: center;
+  position: relative;
+  box-shadow: 0 10px 24px rgba(10,110,102,.14);
+}
+.flow-step:nth-child(2) .flow-num { background: var(--teal); color: #fff; }
+.flow-step h3 { font-size: 17.5px; margin-bottom: 8px; }
+.flow-step p { font-size: 13.5px; color: var(--ink-soft); }
+
+/* ============ 能力六宫格 ============ */
+.cap-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+.cap-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 28px 26px;
+  transition: transform .25s ease, box-shadow .25s ease, border-color .25s;
+}
+.cap-card:hover { transform: translateY(-5px); box-shadow: 0 20px 44px rgba(29,51,49,.1); border-color: rgba(10,110,102,.4); }
+.cap-ico {
+  width: 46px; height: 46px;
+  border-radius: 14px;
+  background: var(--teal-soft);
+  color: var(--teal);
+  display: grid;
+  place-items: center;
+  margin-bottom: 16px;
+}
+.cap-card:nth-child(even) .cap-ico { background: rgba(232,112,79,.14); color: var(--coral); }
+.cap-card h3 { font-size: 17.5px; margin-bottom: 8px; }
+.cap-card p { font-size: 14px; color: var(--ink-soft); }
+
+/* ============ 安全边界 ============ */
+.safety {
+  background: var(--teal-deep);
+  color: #f2f7f4;
+  border-radius: 28px;
+  padding: 64px 58px;
+  position: relative;
+  overflow: hidden;
+}
+.safety::before {
+  content: '';
+  position: absolute;
+  width: 420px; height: 420px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(232,112,79,.22), transparent 65%);
+  top: -180px; right: -120px;
+}
+.safety .kicker { color: #f3b29c; font-size: 13px; letter-spacing: 4px; font-weight: 700; }
+.safety h2 { font-family: var(--serif); font-size: clamp(26px, 3vw, 34px); margin: 12px 0 30px; letter-spacing: 1px; }
+.safety-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; position: relative; }
+.safety-item { border-top: 1px solid rgba(255,255,255,.22); padding-top: 18px; }
+.safety-item strong { display: block; font-size: 17px; margin-bottom: 7px; }
+.safety-item p { font-size: 14px; color: rgba(242,247,244,.78); }
+
+/* ============ 医生摘要 ============ */
+.doctor-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 56px;
+  align-items: center;
+}
+.doctor-grid img {
+  width: 100%;
+  border-radius: 22px;
+  border: 1px solid rgba(255,255,255,.7);
+  box-shadow: 0 26px 60px rgba(29,51,49,.15);
+}
+.check-list { list-style: none; margin-top: 22px; display: flex; flex-direction: column; gap: 13px; }
+.check-list li { display: flex; gap: 12px; align-items: flex-start; font-size: 15px; color: var(--ink-soft); }
+.check-list li::before {
+  content: '';
+  flex-shrink: 0;
+  width: 20px; height: 20px;
+  margin-top: 3px;
+  border-radius: 50%;
+  background: var(--teal) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E") center/11px no-repeat;
+}
+
+/* ============ 数字条 ============ */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 22px; }
+.stat {
+  text-align: center;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 32px 16px 26px;
+}
+.stat .num {
+  font-family: var(--serif);
+  font-size: 46px;
+  font-weight: 900;
+  color: var(--teal);
+  line-height: 1.1;
+}
+.stat .num small { font-size: 22px; }
+.stat .lbl { font-size: 14px; color: var(--ink-soft); margin-top: 6px; }
+
+/* ============ CTA ============ */
+.cta-final { text-align: center; padding-bottom: 100px; }
+.cta-final h2 {
+  font-family: var(--serif);
+  font-size: clamp(30px, 4vw, 44px);
+  font-weight: 900;
+  letter-spacing: 1px;
+  margin-bottom: 16px;
+}
+.cta-final p { color: var(--ink-soft); font-size: 17px; margin-bottom: 34px; }
+
+footer {
+  border-top: 1px solid var(--line);
+  padding: 30px 0 38px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+
+/* ============ 入场动画 ============ */
+.reveal {
+  opacity: 0;
+  transform: translateY(26px);
+  transition: opacity .7s ease var(--d, 0s), transform .7s ease var(--d, 0s);
+}
+.reveal.in { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .reveal, .bubble, .steps-box, .side-card { opacity: 1 !important; transform: none !important; }
+}
+
+/* ============ 响应式 ============ */
+@media (max-width: 920px) {
+  .hero-grid, .demo-grid, .doctor-grid { grid-template-columns: 1fr; }
+  .pain-grid, .cap-grid, .safety-grid { grid-template-columns: 1fr; }
+  .flow-grid { grid-template-columns: repeat(2, 1fr); gap: 34px 0; }
+  .flow-grid::before { display: none; }
+  .trust-strip { grid-template-columns: 1fr; }
+  .trust-strip > div + div { border-left: none; border-top: 1px solid var(--line); }
+  .stats { grid-template-columns: repeat(2, 1fr); }
+  .nav-links a:not(.btn) { display: none; }
+  .safety { padding: 44px 30px; }
+  .ecg { display: none; }
+}
+</style>
+</head>
+<body>
+
+<header class="topnav">
+  <div class="wrap">
+    <a class="brand" href="#top">
+      <span class="brand-mark">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.5-1.5 3-3.2 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.8 0-3 .5-4.5 2-1.5-1.5-2.7-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4 3 5.5l7 7z"/><path d="M3.2 12h4l2-3.5 3 6 2-3.5h6"/></svg>
+      </span>
+      <span><strong>问康</strong><small>CARECUE</small></span>
+    </a>
+    <nav class="nav-links">
+      <a href="#demo">产品演示</a>
+      <a href="#flow">服务流程</a>
+      <a href="#caps">核心能力</a>
+      <a href="#safety">安全边界</a>
+      <a class="btn" href="#cta">预约演示</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- ================= Hero ================= -->
+  <section class="hero">
+    <div class="wrap">
+      <div class="hero-grid">
+        <div>
+          <span class="eyebrow reveal">就医前健康咨询 · 面向长辈与家庭</span>
+          <h1 class="reveal" style="--d:.08s">身体不舒服，<br />先让 <em>问康</em> 帮家人说清楚</h1>
+          <p class="lede reveal" style="--d:.16s">长辈只会说"不得劲"，子女远程干着急。问康用对话把模糊的不舒服整理成结构化病情，核查危险信号、联网核验权威资料，生成一份能直接带去医院的症状报告。</p>
+          <div class="hero-cta reveal" style="--d:.24s">
+            <a class="btn" href="#demo">看 60 秒演示</a>
+            <a class="btn ghost" href="#safety">了解安全边界</a>
+          </div>
+        </div>
+        <div class="hero-img reveal" style="--d:.2s">
+          <img src="assets/hero.png" alt="一家人围坐查看问康健康咨询界面" />
+          <div class="ecg" aria-hidden="true">
+            <svg viewBox="0 0 200 40"><path d="M0 22 H40 L50 22 L58 8 L66 34 L74 22 H110 L120 22 L128 10 L136 32 L144 22 H200" /></svg>
+          </div>
+        </div>
+      </div>
+
+      <div class="trust-strip reveal" style="--d:.3s">
+        <div>
+          <span class="ti"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span>
+          <div><strong>不确诊、不开药</strong><span>只做就医前整理与方向建议，永远把判断权留给医生</span></div>
+        </div>
+        <div>
+          <span class="ti"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="M3 17h18l-2-2v-5a7 7 0 0 0-14 0v5z"/></svg></span>
+          <div><strong>危险信号优先</strong><span>红旗规则由代码硬性兜底，急症组合第一时间提示急诊</span></div>
+        </div>
+        <div>
+          <span class="ti"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>
+          <div><strong>权威来源引用</strong><span>建议附带分级权威出处，角标可溯源，不伪造引用</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 痛点 ================= -->
+  <section>
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <span class="kicker">为什么需要问康</span>
+        <h2>看病前的那一晚，每个家庭都经历过</h2>
+        <p>搜索引擎越看越吓人，问 AI 各说各话，到了诊室又说不清——问康针对的就是这段"就医前的空白"。</p>
+      </div>
+      <div class="pain-grid">
+        <div class="pain-card reveal"><span class="q">惑</span>
+          <h3>长辈说不清</h3>
+          <p>"头晕""不得劲""胸口堵得慌"——关键的持续时间、伴随症状、用药史全部缺失，紧张时更说不明白。</p>
+        </div>
+        <div class="pain-card reveal" style="--d:.1s"><span class="q">慌</span>
+          <h3>子女判断难</h3>
+          <p>远程视频里看不出轻重：要不要连夜挂急诊？能不能先观察？挂哪个科？每一次都靠猜。</p>
+        </div>
+        <div class="pain-card reveal" style="--d:.2s"><span class="q">乱</span>
+          <h3>信息不可信</h3>
+          <p>搜索结果鱼龙混杂，营销内容夹杂其中；不同 AI 给出不同答案，没有依据、无法溯源。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 动态演示 ================= -->
+  <section class="demo-section" id="demo">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <span class="kicker">产品演示</span>
+        <h2>一次真实的咨询，60 秒看完</h2>
+        <p>下面是自动播放的真实交互还原：每一步分析过程透明可见，每一条建议都有出处。</p>
+      </div>
+      <div class="demo-grid">
+        <div class="phone reveal" id="phone">
+          <div class="phone-bar">
+            <span class="dot"></span><span class="dot"></span>
+            <strong>问康 · 就医前症状整理</strong>
+          </div>
+          <div class="phone-screen" id="screen"></div>
+        </div>
+        <div class="demo-side">
+          <div class="side-card" data-sync="1">
+            <span class="sc-tag">STEP 01 · 听懂</span>
+            <h4>口语化描述，自动结构化</h4>
+            <p>"胸口闷"被拆解为部位、起病方式、伴随症状、既往史等结构化字段，缺什么一目了然。</p>
+          </div>
+          <div class="side-card" data-sync="2">
+            <span class="sc-tag">STEP 02 · 核查</span>
+            <h4>过程透明：每一步都看得见</h4>
+            <p>危险信号核查、联网检索、报告生成——像医生查房一样逐步呈现，不是不可解释的黑盒。</p>
+          </div>
+          <div class="side-card" data-sync="3">
+            <span class="sc-tag">STEP 03 · 有据</span>
+            <h4>结论带角标，来源可点击</h4>
+            <p>引用默沙东诊疗手册等分级权威来源，角标①②③对应文末出处，长辈也能转给子女核实。</p>
+            <span class="risk-pill">当前评估：低风险 · 可先观察</span>
+          </div>
+          <p class="demo-note">演示为真实产品交互还原，对话内容已脱敏。</p>
+          <button class="replay" id="replay" type="button">↻ 重新播放演示</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 流程 ================= -->
+  <section id="flow">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <span class="kicker">服务流程</span>
+        <h2>四步，从"说不清"到"带着报告进诊室"</h2>
+      </div>
+      <div class="flow-grid">
+        <div class="flow-step reveal"><div class="flow-num">壹</div>
+          <h3>一句话说症状</h3><p>口语描述即可，无需医学词汇，长辈也能直接上手。</p>
+        </div>
+        <div class="flow-step reveal" style="--d:.1s"><div class="flow-num">贰</div>
+          <h3>智能追问核查</h3><p>优先确认危险信号，再逐步补齐关键信息，每轮只问最重要的。</p>
+        </div>
+        <div class="flow-step reveal" style="--d:.2s"><div class="flow-num">叁</div>
+          <h3>联网权威核验</h3><p>按需检索白名单权威来源，证据评分后才进入判断依据。</p>
+        </div>
+        <div class="flow-step reveal" style="--d:.3s"><div class="flow-num">肆</div>
+          <h3>生成就医报告</h3><p>可能方向、注意事项、建议科室、医生沟通摘要，一键复制带去医院。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 能力 ================= -->
+  <section id="caps" style="padding-top: 30px;">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <span class="kicker">核心能力</span>
+        <h2>不止能聊，更经得起追问</h2>
+      </div>
+      <div class="cap-grid">
+        <div class="cap-card reveal">
+          <span class="cap-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="M3 17h18l-2-2v-5a7 7 0 0 0-14 0v5z"/></svg></span>
+          <h3>红旗风险识别</h3>
+          <p>胸痛伴出汗、突发剧烈头痛等急症组合由代码规则硬性识别，命中即停止线上分析、直接提示急诊。</p>
+        </div>
+        <div class="cap-card reveal" style="--d:.08s">
+          <span class="cap-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></span>
+          <h3>权威来源核查</h3>
+          <p>只采信分级白名单来源（政府机构、权威医学手册等），建议附角标引用，检索失败明确说明、绝不伪造。</p>
+        </div>
+        <div class="cap-card reveal" style="--d:.16s">
+          <span class="cap-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+          <h3>历史对话随时续聊</h3>
+          <p>每次咨询完整保存，刷新、换设备、隔天回来都能接着聊，不用重新描述一遍病情。</p>
+        </div>
+        <div class="cap-card reveal" style="--d:.24s">
+          <span class="cap-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></span>
+          <h3>医生沟通摘要</h3>
+          <p>按问诊习惯整理主诉、病程、伴随症状与疑似方向，进诊室直接出示，节省双方时间。</p>
+        </div>
+        <div class="cap-card reveal" style="--d:.32s">
+          <span class="cap-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="5"/><path d="M20 21a8 8 0 1 0-16 0"/></svg></span>
+          <h3>适老化体验</h3>
+          <p>大字号、口语化引导、柔和视觉；高危输入实时警示但不制造焦虑，专为长辈和家庭场景设计。</p>
+        </div>
+        <div class="cap-card reveal" style="--d:.4s">
+          <span class="cap-ico"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><path d="M3 12h18"/><circle cx="12" cy="12" r="9"/></svg></span>
+          <h3>全链路可审计</h3>
+          <p>症状抽取、风险研判、检索、生成每一步留痕，分析过程对用户可见、对运营可回溯。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 安全边界 ================= -->
+  <section id="safety">
+    <div class="wrap">
+      <div class="safety reveal">
+        <span class="kicker">安全边界 · 我们的底线</span>
+        <h2>医疗 AI 的价值，从克制开始</h2>
+        <div class="safety-grid">
+          <div class="safety-item">
+            <strong>规则优先于模型</strong>
+            <p>急症判断由代码规则执行，AI 无权降低风险等级；高危结论不允许被模型"安抚"弱化。</p>
+          </div>
+          <div class="safety-item">
+            <strong>永不越界三件事</strong>
+            <p>不下确诊结论、不推荐处方药与剂量、不劝阻就医。信息不足时只做阶段性整理并说明缺什么。</p>
+          </div>
+          <div class="safety-item">
+            <strong>数据属于用户</strong>
+            <p>健康数据按用户严格隔离、服务端加密存储；记录可查看、可删除，敏感信息最小化收集。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 医生摘要场景 ================= -->
+  <section style="padding-top: 40px;">
+    <div class="wrap">
+      <div class="doctor-grid">
+        <div class="reveal">
+          <img src="assets/doctor.png" alt="用户向医生出示问康生成的病情摘要" />
+        </div>
+        <div class="reveal" style="--d:.12s">
+          <span class="kicker" style="font-size:13px; letter-spacing:4px; color:var(--coral); font-weight:700;">最终交付</span>
+          <h2 style="font-family:var(--serif); font-weight:800; font-size:clamp(26px,3vw,36px); margin:12px 0 14px; letter-spacing:1px;">一份医生愿意看的<br/>就医前症状报告</h2>
+          <p style="color:var(--ink-soft);">咨询的终点不是聊天记录，而是一份结构化交付物：</p>
+          <ul class="check-list">
+            <li>当前结论与风险判断理由，明确标注不确定项</li>
+            <li>可能方向（含支持与反对证据），与必须优先排除的情况分开呈现</li>
+            <li>现在能做什么、什么情况必须就医、建议挂哪个科</li>
+            <li>医生沟通摘要：按问诊习惯排序，一键复制出示</li>
+            <li>参考依据：分级权威来源列表，角标对应可溯源</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 数字 ================= -->
+  <section style="padding-top: 20px;">
+    <div class="wrap">
+      <div class="stats">
+        <div class="stat reveal"><div class="num" data-count="4">0</div><div class="lbl">级风险分级体系<br/>急症组合代码硬性兜底</div></div>
+        <div class="stat reveal" style="--d:.08s"><div class="num" data-count="2">0</div><div class="lbl">级权威来源准入<br/>白名单外不进判断依据</div></div>
+        <div class="stat reveal" style="--d:.16s"><div class="num" data-count="19">0</div><div class="lbl">项自动化安全用例<br/>每次发布必须全部通过</div></div>
+        <div class="stat reveal" style="--d:.24s"><div class="num" data-count="100" data-suffix="%">0</div><div class="lbl">会话可恢复<br/>刷新或隔天回来接着聊</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= CTA ================= -->
+  <section class="cta-final" id="cta">
+    <div class="wrap">
+      <h2 class="reveal">把"就医前的不安"，<br/>变成一份从容的准备</h2>
+      <p class="reveal" style="--d:.1s">欢迎预约完整产品演示，体验真实咨询全流程。</p>
+      <div class="reveal" style="--d:.18s">
+        <a class="btn" href="#" style="font-size:17px; padding:15px 40px;">预约产品演示</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>问康 CareCue · 就医前症状整理与日常健康咨询助手</span>
+    <span>本产品不提供医疗诊断；出现急症征兆请立即拨打 120 或前往急诊。</span>
+  </div>
+</footer>
+
+<script>
+// ---------- 滚动渐入 ----------
+const io = new IntersectionObserver((entries) => {
+  for (const e of entries) {
+    if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+  }
+}, { threshold: 0.18 });
+document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+
+// ---------- 数字 count-up ----------
+const statIo = new IntersectionObserver((entries) => {
+  for (const e of entries) {
+    if (!e.isIntersecting) continue;
+    statIo.unobserve(e.target);
+    const target = Number(e.target.dataset.count);
+    const suffix = e.target.dataset.suffix ?? '';
+    const start = performance.now();
+    const tick = (now) => {
+      const p = Math.min((now - start) / 1100, 1);
+      const eased = 1 - Math.pow(1 - p, 3);
+      e.target.innerHTML = String(Math.round(target * eased)) + (suffix ? `<small>${suffix}</small>` : '');
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+}, { threshold: 0.5 });
+document.querySelectorAll('.stat .num').forEach((el) => statIo.observe(el));
+
+// ---------- 对话演示时间轴 ----------
+const screen = document.getElementById('screen');
+const sideCards = document.querySelectorAll('.side-card');
+let demoTimer = [];
+let demoStarted = false;
+
+const wait = (ms) => new Promise((resolve) => {
+  const t = setTimeout(resolve, ms);
+  demoTimer.push(t);
+});
+
+function el(html) {
+  const div = document.createElement('div');
+  div.innerHTML = html.trim();
+  return div.firstChild;
+}
+
+async function playDemo() {
+  demoTimer.forEach(clearTimeout);
+  demoTimer = [];
+  screen.innerHTML = '';
+  sideCards.forEach((c) => c.classList.remove('show'));
+
+  // 1. 用户消息
+  const u1 = el(`<div class="bubble user">我爸 68 岁，这两天总说胸口有点闷，要紧吗？</div>`);
+  screen.appendChild(u1);
+  await wait(150); u1.classList.add('show');
+  await wait(900);
+  document.querySelector('[data-sync="1"]').classList.add('show');
+
+  // 2. 工具步骤
+  const steps = el(`<div class="steps-box">
+    <div class="steps-title">分析过程</div>
+    <div class="step-row" data-i="0"><span class="step-ico"></span><span>提取症状信息</span></div>
+    <div class="step-row" data-i="1"><span class="step-ico"></span><span>核查危险信号 · 未命中急症组合</span></div>
+    <div class="step-row" data-i="2"><span class="step-ico"></span><span>联网核查权威来源 · 命中 2 条 A/B 级</span></div>
+    <div class="step-row" data-i="3"><span class="step-ico"></span><span>生成阶段性整理</span></div>
+  </div>`);
+  screen.appendChild(steps);
+  await wait(200); steps.classList.add('show');
+
+  const rows = steps.querySelectorAll('.step-row');
+  for (const row of rows) {
+    row.classList.add('visible', 'running');
+    await wait(820);
+    row.classList.remove('running');
+    row.classList.add('done');
+  }
+  document.querySelector('[data-sync="2"]').classList.add('show');
+  await wait(500);
+
+  // 3. AI 回复
+  const a1 = el(`<div class="bubble ai">从目前描述看，<b>暂未发现需要立即急诊的信号组合</b><span class="sup">①</span>。但有两件事需要先确认：胸闷是活动后加重还是休息时也有？有没有伴随出汗、左臂或下颌放射痛？<br/><span class="cite-chip"><b>A级</b> ① 默沙东诊疗手册 · 胸部不适</span></div>`);
+  screen.appendChild(a1);
+  await wait(160); a1.classList.add('show');
+  await wait(1000);
+  document.querySelector('[data-sync="3"]').classList.add('show');
+
+  // 4. 用户补充 + 报告提示
+  await wait(1400);
+  const u2 = el(`<div class="bubble user">走两步就明显一些，没出汗，胳膊不疼。</div>`);
+  screen.appendChild(u2);
+  await wait(150); u2.classList.add('show');
+  await wait(1100);
+  const a2 = el(`<div class="bubble ai">已记录。建议尽快安排心内科门诊评估<span class="sup">①</span>，就诊前避免剧烈活动。<b>医生沟通摘要已生成</b>，可一键复制带去医院。若出现持续胸痛、出冷汗或气短，请立即急诊。</div>`);
+  screen.appendChild(a2);
+  await wait(160); a2.classList.add('show');
+
+  // 5. 循环
+  await wait(5200);
+  if (demoStarted) playDemo();
+}
+
+const demoIo = new IntersectionObserver((entries) => {
+  for (const e of entries) {
+    if (e.isIntersecting && !demoStarted) {
+      demoStarted = true;
+      playDemo();
+      demoIo.unobserve(e.target);
+    }
+  }
+}, { threshold: 0.35 });
+demoIo.observe(document.getElementById('phone'));
+
+document.getElementById('replay').addEventListener('click', () => {
+  demoStarted = true;
+  playDemo();
+});
+</script>
+</body>
+</html>
