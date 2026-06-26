@@ -294,7 +294,7 @@ export class TraceLogger {
       payload.status ?? (payload.fallback ? 'fallback' : payload.error ? 'failed' : undefined)
 
     const event: TraceEvent = {
-      traceId: this.requestIds.get(caseId) ?? caseId.slice(0, 8),
+      traceId: caseId,
       sessionId: this.sessionIds.get(caseId) ?? caseId,
       requestId: this.requestIds.get(caseId),
       stepId,
@@ -341,7 +341,7 @@ export class TraceLogger {
   }
 
   private printSummary(event: TraceEvent, payload: TracePayload) {
-    const prefix = event.traceId
+    const prefix = event.traceId.slice(0, 8)
     const tag = `[Trace][${prefix}][#${event.stepId}][+${event.elapsedMs}ms]${event.durationMs != null ? `[${event.durationMs}ms]` : ''}`
     const statusText = event.status ? ` status=${event.status}` : ''
 
