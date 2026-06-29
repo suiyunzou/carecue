@@ -1,0 +1,17 @@
+# 症状组合 → 红旗映射。
+# 维护原则：每条红旗必须有 ask（区分用问题）；只写区分线索，不写诊断标准。
+# M1 仅覆盖一组：头晕 + 胸闷。
+- symptoms: [头晕, 胸闷]
+  red_flags:
+    - name: 心源性
+      severity: high
+      ask: 有没有压榨性、闷胀样的胸痛？是否放射到左臂、肩背或下巴？
+      positive_signals: [压榨痛, 压榨性疼痛, 放射痛, 放射到左臂, 冷汗, 濒死感]
+    - name: 脑血管
+      severity: high
+      ask: 有没有一侧手脚无力、说话不清、口角歪斜或看东西重影？
+      positive_signals: [偏瘫, 一侧无力, 言语不清, 说话不清, 视野缺损, 口角歪斜, 面瘫]
+    - name: 心律失常
+      severity: medium
+      ask: 是否感到心跳很快、很乱或有明显的停跳、漏跳感？
+      positive_signals: [心悸, 心跳很快, 停跳感, 漏跳, 脉搏不齐]

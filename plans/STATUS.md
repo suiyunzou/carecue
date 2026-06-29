@@ -1,7 +1,46 @@
 # CareCue Agent v4.0 改造状态记录
 
 > 创建日期: 2026-06-27
-> 最后更新: 2026-06-28 (中午 — 修复慢 LLM 回退导致的工具外层超时)
+> 最后更新: 2026-06-29 (M1 骨架打通 — 按《agent升级计划.md》落地约束式事件循环)
+
+---
+
+## 0、v4.0 设计文档落地 — M1 骨架（2026-06-29）
+
+> 依据：`plans/agent升级计划.md`（CareCue 4.0 设计文档），方法论见 §3.2 / §3.3。
+> 模块设计文档：`plans/001-M1骨架设计.md`。
+
+**目标（M1：骨架打通）已全部达成：**
+
+| M1 项 | 状态 |
+|------|------|
+| 知识库 1 组症状（头晕 + 胸闷），YAML 落地 | ✅ |
+| 工具：lookup_red_flags / ask_user / update_red_flag / generate_report | ✅ |
+| 约束式事件循环主循环（非状态机）+ Mock LLM | ✅ |
+| Workspace（增量更新 + toSummary + 快照） | ✅ |
+| Guard（pending 禁报告 / 重复问题 / 报告禁语 / 高危 positive 放行急症） | ✅ |
+| 端到端跑通「头晕胸闷」（正常排查 + 急症两条路径） | ✅ |
+| 工具失败 1 次仍能继续（重试 + 错误反馈） | ✅ |
+
+**物理位置：** 全新干净实现放在 `server/src/`，**不改动**遗留 `server/agent/` 与现有 Express 路由（迁移留待后续里程碑、由 trace 验证后再删旧）。
+
+```
+server/src/
+├── agent/{workspace,guard,llm,loop}.ts   # Workspace / Guard / LLM(Mock+DeepSeek) / 主循环
+├── tools/{index,types,lookupRedFlags,askUser,updateRedFlag,generateReport}.ts
+├── knowledge/{loader.ts, files/*.yaml}   # red_flags / hypothesis_hints / care_plans / referral_rules
+├── schemas/index.ts                       # Zod 入参出参强约束
+└── consult.test.ts                        # M1 端到端测试（8 用例全过）
+```
+
+**验证：**
+```bash
+npm run test:m1        # 8/8 通过（正常报告 / 急症 / 强制加载 / 失败恢复 / 4 条 Guard）
+npx tsc -p tsconfig.server.json --noEmit   # server/src/ 0 错误
+```
+> 注：legacy `server/index.ts` 等 7 处 typecheck 错误是 Prisma client 未生成（postinstall 拉取引擎被网络策略拦截）所致，与 M1 无关。
+
+**下一步（M2）：** DeepSeek 真实接入（`llm.ts` 中 `DeepSeekLlm` 已就绪，待用 `createDeepSeekLlm()` 在新路由 `routes/consult.ts` 装配）；Guard 接全部 5 条；Workspace 落 PG。M1 期间 Mock LLM 内置了轻量否定启发式（真实 LLM 天然理解否定）。
 
 ---
 
