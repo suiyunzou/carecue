@@ -2,7 +2,7 @@
 // 用户输入 -> 症状抽取 -> 症状域识别 -> 风险核查 -> 红旗评估
 // -> AgentDecision -> 工具执行 -> 证据回写 -> 分析 -> 处理建议 -> 追问/报告/急症
 
-import type { FollowupQuestion } from './case/CaseState.ts'
+import type { CaseState, FollowupQuestion } from './case/CaseState.ts'
 import type { CaseStateService } from './case/caseStateService.ts'
 import type { MessageService } from './messages/messageService.ts'
 import type { ToolExecutor, ToolExecutionResult } from './tools/ToolExecutor.ts'
@@ -59,17 +59,21 @@ export async function runCareCueAgent(
   const emergencyResponder = new EmergencyResponder(traceLogger)
   const emit = input.onEvent ?? (() => undefined)
 
-  let state = await caseStateService.loadOrCreate(input.caseId, input.userId)
-  const caseId = state.caseId
-  traceLogger.beginRequest(caseId)
+  let state: CaseState | undefined
+  let caseId: string | undefined
 
-  traceLogger.log(caseId, 'user_input', {
+  try {
+    state = await caseStateService.loadOrCreate(input.caseId, input.userId)
+    caseId = state.caseId
+    traceLogger.beginRequest(caseId)
+
+    traceLogger.log(caseId, 'user_input', {
     status: 'success',
     input: {
       text: input.userMessage,
       sessionId: caseId,
       userId: input.userId,
-      turn: state.meta.agentSteps,
+      turn: state.symptoms.userOriginalText.length + 1,
     },
     stateBefore: state,
   })
@@ -93,9 +97,9 @@ export async function runCareCueAgent(
   }
 
   const buildCtx = (): ToolContext => ({
-    caseId,
+    caseId: caseId!,
     userId: input.userId,
-    state,
+    state: state!,
     traceLogger,
     llm,
     search,
@@ -143,7 +147,28 @@ export async function runCareCueAgent(
     traceLogger.log(caseId, 'symptom_domain_classified', { output: domainResult.output })
   }
 
-  // ---- 阶段 3：风险核查 ----
+  // ---- 阶段 3：初始假设生成（基于症状组合推理）----
+  emit({ type: 'status', message: '正在分析症状组合...' })
+  const hypothesisResult = await runTool('hypothesis.initial_generate', {})
+  if (hypothesisResult.status === 'success') {
+    state = await caseStateService.merge(caseId, {
+      patch: {
+        ...hypothesisResult.statePatch,
+        meta: { ...state.meta, hypothesisRounds: 0 },
+      },
+      updateReason: 'initial_hypotheses_generated',
+      source: 'llm',
+    })
+    traceLogger.log(caseId, 'hypotheses_updated', {
+      output: state.hypotheses.map((h) => `${h.name}(${h.likelihood})`),
+    })
+    emit({
+      type: 'extracted_facts',
+      facts: buildKnownFacts(state),
+    })
+  }
+
+  // ---- 阶段 4：风险核查（轻量，仅检测紧急信号，不阻塞分析）----
   emit({ type: 'status', message: '正在检查危险信号...' })
   const riskProbeResult = await runTool('risk.probe', {})
   if (riskProbeResult.status === 'success') {
@@ -186,30 +211,12 @@ export async function runCareCueAgent(
     return response
   }
 
-  // ---- R2 且关键红旗未确认：优先风险核查追问 ----
-  if (state.risk.level === 'R2' && state.riskProbe.unresolvedRedFlags.length > 0 && state.riskProbe.probeStatus === 'in_progress') {
-    const questionsResult = await runTool<FollowupOutput>('question.generate_risk_probe', {})
-
-    if (questionsResult.status === 'success') {
-      const checked = questionGuard.validate(toFollowups(questionsResult.output.questions, 'risk_probe'), state)
-      traceLogger.log(caseId, 'question_guard', {
-        output: { kept: checked.questions.map((q) => q.question), dropped: checked.dropped },
-      })
-
-      if (checked.questions.length > 0) {
-        state = await caseStateService.recordAskedQuestions(caseId, checked.questions)
-        const response = reportRenderer.renderFollowup({
-          state,
-          questions: checked.questions,
-          mode: 'risk_probe',
-          intro: questionsResult.output.intro,
-        })
-        await messageService.appendAssistantMessage(caseId, JSON.stringify(response.questions.map((q) => q.question)), 'followup')
-        traceLogger.log(caseId, 'final_output', { reason: 'followup(risk_probe)', status: 'success', output: response })
-        return response
-      }
-    }
-    // 追问生成失败 / 问题全部被去重：继续主循环，按现有信息分析并说明不确定性
+  // ---- R2：不再阻塞，允许进入假设驱动分析（风险信息已在 state 中记录）----
+  if (state.risk.level === 'R2' && state.meta.followupRounds < AGENT_LIMITS.maxRiskProbeRounds) {
+    traceLogger.log(caseId, 'risk_probe', {
+      status: 'skipped',
+      reason: 'R2 不再阻塞分析流程，携带现有信息进入假设驱动推理循环。',
+    })
   }
 
   // ---- 阶段 5：Agent 决策主循环 ----
@@ -389,11 +396,18 @@ export async function runCareCueAgent(
       }
 
       case 'ask_user': {
-        emit({ type: 'status', message: '还需要补充关键信息，正在生成追问...' })
-        const result = await runTool<FollowupOutput>('question.generate', {})
+        emit({ type: 'status', message: '正在根据分析结果生成追问...' })
+
+        // 有假设时使用假设驱动的精准追问，无假设时使用通用追问
+        const questionTool = state.hypotheses.length > 0 ? 'question.generate_hypothesis' : 'question.generate'
+        const result = await runTool<FollowupOutput>(questionTool, {})
         if (result.status === 'error') {
-          // 无法生成追问 -> 按现有信息输出阶段性判断
           return finish(await failureRecovery.handle({ code: result.message.error!.code, state }))
+        }
+
+        // 假设驱动追问可能返回空（假设已收敛），此时跳过追问进入下一决策
+        if (result.output.questions.length === 0) {
+          continue
         }
 
         const checked = questionGuard.validate(toFollowups(result.output.questions, 'differential'), state)
@@ -402,12 +416,11 @@ export async function runCareCueAgent(
         })
 
         if (checked.questions.length === 0) {
-          // 问题全部被去重/拦截 -> 不再追问，继续推进分析
           continue
         }
 
-        // 自适应追问：第一轮可以问到 3 个，之后每轮只追问剩下最关键的 1 个
-        const maxQuestions = state.meta.followupRounds >= 1 ? 1 : AGENT_LIMITS.maxQuestionsPerTurn
+        // 自适应追问：第一轮最多2个（假设驱动版本），之后每轮1个
+        const maxQuestions = state.meta.followupRounds >= 1 ? 1 : Math.min(AGENT_LIMITS.maxQuestionsPerTurn, 2)
         const selectedQuestions = checked.questions.slice(0, maxQuestions)
 
         state = await caseStateService.recordAskedQuestions(caseId, selectedQuestions)
@@ -421,7 +434,6 @@ export async function runCareCueAgent(
         traceLogger.log(caseId, 'final_output', { reason: 'followup(differential)', status: 'success', output: response })
         return response
       }
-
       case 'final_answer': {
         emit({ type: 'status', message: '正在生成分析报告...' })
         let draft = await runTool<FinalReport>(
@@ -496,13 +508,69 @@ export async function runCareCueAgent(
     }
   }
 
-  return finish(await failureRecovery.handle({ code: 'MAX_STEP_REACHED', state }))
+  return finish(await failureRecovery.handle({ code: 'MAX_STEP_REACHED', state: state! }))
 
   async function finish(response: AgentResponse): Promise<AgentResponse> {
     if (response.type === 'stage_report') {
-      await messageService.appendAssistantMessage(caseId, response.content, 'stage_report')
+      await messageService.appendAssistantMessage(caseId!, response.content, 'stage_report')
     }
     return response
+  }
+  } catch (unexpectedError) {
+    const err = unexpectedError instanceof Error ? unexpectedError : new Error(String(unexpectedError))
+    console.error('[Agent] runCareCueAgent unexpected error', err)
+
+    // 确保 caseId 有效，用于日志
+    const safeCaseId = caseId ?? `error-${Date.now()}`
+
+    try {
+      traceLogger.log(safeCaseId, 'failure_recovery', {
+        reason: `未预期的 Agent 运行时错误：${err.message}`,
+        error: { name: err.name, message: err.message, stack: err.stack },
+      })
+    } catch {
+      // traceLogger 本身出问题时静默吞掉
+    }
+
+    emit({ type: 'error', message: '分析服务暂时不可用，请稍后重试。' })
+
+    // 如果 state 已经初始化，尝试用 failureRecovery 生成降级报告
+    if (state) {
+      try {
+        return await failureRecovery.handle({
+          code: 'TOOL_RUNTIME_ERROR',
+          state,
+          debugPayload: { unexpectedError: err.message },
+        })
+      } catch {
+        // 降级报告也生成失败，继续到最终兜底
+      }
+    }
+
+    // 最终兜底：返回最简阶段报告
+    return {
+      type: 'stage_report',
+      caseId: safeCaseId,
+      riskLevel: 'R1',
+      stateSnapshot: {
+        chiefComplaint: '',
+        primaryDomain: 'unknown',
+        riskLevel: 'R1',
+        riskReason: '分析过程异常',
+        inRiskProbe: false,
+        knownFacts: [],
+        hypotheses: [],
+        evidenceSources: [],
+        citations: [],
+        searchQueries: [],
+        missingInfo: [],
+      },
+      citations: [],
+      content: '分析服务暂时不可用，请稍后重试。如果问题持续出现，请联系技术支持。',
+      reason: '分析过程中发生未预期的错误，已安全降级。',
+      failureCode: 'TOOL_RUNTIME_ERROR',
+      nextStepHints: ['请稍后重试，或联系客服获取帮助。'],
+    }
   }
 }
 

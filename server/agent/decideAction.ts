@@ -5,7 +5,7 @@ import type { CaseState } from './case/CaseState.ts'
 import { agentDecisionSchema, type AgentDecision } from './actionSchema.ts'
 import { AGENT_LIMITS } from './agentLimits.ts'
 import type { LlmClient } from './llm/llmClient.ts'
-import { LlmUnavailableError } from './llm/llmClient.ts'
+import { isRecoverableLlmError } from './llm/llmClient.ts'
 import { buildDecideActionPrompt } from './llm/prompts/decideAction.prompt.ts'
 import type { TraceLogger } from './logs/traceLogger.ts'
 import { userForcedSearchActive, webSearchEnabled } from './search/searchPolicy.ts'
@@ -45,7 +45,7 @@ export async function decideAction(input: {
     })
   } catch (error) {
     usedFallback = true
-    if (error instanceof LlmUnavailableError) {
+    if (isRecoverableLlmError(error)) {
       traceLogger.log(state.caseId, 'llm_fallback', { reason: 'decideAction 使用确定性策略' })
     } else {
       traceLogger.log(state.caseId, 'llm_fallback', {

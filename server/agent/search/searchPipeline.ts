@@ -47,6 +47,7 @@ export class SearchPipeline {
     const normalizedTasks = searchTaskNormalizer.normalize(input.tasks, state)
     this.traceLogger.log(caseId, 'search_queries', {
       output: normalizedTasks.map((t) => ({ query: t.query, purpose: t.purpose })),
+      status: 'success'
     })
 
     if (normalizedTasks.length === 0) {
@@ -109,9 +110,11 @@ export class SearchPipeline {
     const filtered = filterSources(rawResults)
     this.traceLogger.log(caseId, 'sources_accepted', {
       output: filtered.accepted.map((s) => ({ url: s.url, credibility: s.credibility })),
+      status: 'success'
     })
     this.traceLogger.log(caseId, 'sources_rejected', {
       output: filtered.rejected,
+      status: 'success'
     })
 
     if (filtered.accepted.length === 0) {
@@ -161,6 +164,7 @@ export class SearchPipeline {
         summary: e.summary.slice(0, 80),
       })),
       reason: `dropped: ${aggregated.droppedEvidence.length + validated.dropped.length}`,
+      status: 'success'
     })
 
     const statePatch: Partial<CaseState> = {

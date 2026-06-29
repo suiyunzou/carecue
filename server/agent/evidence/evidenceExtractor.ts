@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import type { CaseState } from '../case/CaseState.ts'
 import type { LlmClient } from '../llm/llmClient.ts'
-import { LlmUnavailableError } from '../llm/llmClient.ts'
+import { isRecoverableLlmError } from '../llm/llmClient.ts'
 import { buildExtractEvidencePrompt } from '../llm/prompts/extractEvidence.prompt.ts'
 import type { FetchedPage } from '../search/sourceFetcher.ts'
 import { extractedFactsSchema, applicableToSchema, type MedicalEvidence } from './evidenceSchema.ts'
@@ -56,7 +56,7 @@ export async function extractEvidenceFromPage(
       extractedAt: new Date().toISOString(),
     }
   } catch (error) {
-    if (!(error instanceof LlmUnavailableError)) throw error
+    if (!isRecoverableLlmError(error)) throw error
     traceLogger?.log(state.caseId, 'llm_fallback', { reason: 'evidence.extract: LLM 不可用，仅保留原文摘要降级' })
     // 降级：仅保留摘要，不提取结构化医学事实
     return {

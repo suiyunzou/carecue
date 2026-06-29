@@ -1,46 +1,43 @@
-// 病例分析工具 case.analyze — v3.0 设计文档 §24
-// 输出疑似疾病方向排序（不确诊），每个方向必须有支持依据和反对依据/不确定点。
+// 初始假设生成工具 hypothesis.initial_generate — v4.0
+// 基于症状组合生成初步假设，不依赖搜索证据
 
 import { z } from 'zod'
 import { defineTool } from '../tools/Tool.ts'
 import type { CaseState, Hypothesis, MissingInfo } from '../case/CaseState.ts'
-import { blockWhenEmergency, requireSymptoms } from '../tools/ToolGuards.ts'
-import { buildAnalyzeCasePrompt } from '../llm/prompts/analyzeCase.prompt.ts'
+import { caseAnalyzeOutputSchema, type CaseAnalyzeOutput } from '../analysis/hypothesisSchema.ts'
+import { buildInitialHypothesisPrompt } from '../llm/prompts/initialHypothesis.prompt.ts'
 import { isRecoverableLlmError } from '../llm/llmClient.ts'
-import { caseAnalyzeOutputSchema, type CaseAnalyzeOutput } from './hypothesisSchema.ts'
 import { getDomainConfig } from '../symptoms/symptomDomainConfig.ts'
 
-export const caseAnalyzeTool = defineTool({
-  name: 'case.analyze',
-  description: '基于症状和证据输出疑似疾病方向排序、缺失信息和下一步判断。',
+const HYPOTHESIS_LLM_BUDGET_MS = Number(process.env.AGENT_HYPOTHESIS_LLM_BUDGET_MS ?? 22000)
+const HYPOTHESIS_TOOL_TIMEOUT_MS = Number(process.env.AGENT_HYPOTHESIS_TOOL_TIMEOUT_MS ?? 30000)
+
+export const initialHypothesisTool = defineTool({
+  name: 'hypothesis.initial_generate',
+  description: '基于症状组合生成初始疑似方向（不依赖搜索证据）。',
   inputSchema: z.object({}),
   outputSchema: caseAnalyzeOutputSchema,
   guardLevel: 'medical_reasoning',
-  timeoutMs: 40000,
-
-  guard(_input, state) {
-    const emergency = blockWhenEmergency(state)
-    if (!emergency.allowed) return emergency
-    return requireSymptoms(state)
-  },
+  timeoutMs: HYPOTHESIS_TOOL_TIMEOUT_MS,
 
   async call(_input, ctx) {
     try {
-      const prompt = buildAnalyzeCasePrompt(ctx.state)
+      const prompt = buildInitialHypothesisPrompt(ctx.state)
       const result = await ctx.llm.structured({
         schema: caseAnalyzeOutputSchema,
-        schemaName: 'case_analyze',
+        schemaName: 'initial_hypothesis',
         system: prompt.system,
         user: prompt.user,
-        temperature: 0.2,
-        trace: { traceLogger: ctx.traceLogger, caseId: ctx.caseId, node: 'case.analyze' },
+        temperature: 0.3,
+        maxDurationMs: HYPOTHESIS_LLM_BUDGET_MS,
+        trace: { traceLogger: ctx.traceLogger, caseId: ctx.caseId, node: 'hypothesis.initial_generate' },
       })
-      return sanitizeAnalysis(result, ctx.state)
+      return sanitizeInitialHypotheses(result, ctx.state)
     } catch (error) {
       if (!isRecoverableLlmError(error)) throw error
-      ctx.traceLogger.log(ctx.caseId, 'llm_fallback', { reason: 'case.analyze 使用症状域种子降级' })
-      ctx.markFallback('case.analyze: LLM 不可用，使用症状域种子降级，结论标注为低置信参考')
-      return fallbackAnalysis(ctx.state)
+      ctx.traceLogger.log(ctx.caseId, 'llm_fallback', { reason: 'hypothesis.initial_generate 使用症状域种子降级' })
+      ctx.markFallback('hypothesis.initial_generate: LLM 不可用，使用症状域种子降级')
+      return fallbackInitialHypotheses(ctx.state)
     }
   },
 
@@ -65,8 +62,8 @@ export const caseAnalyzeTool = defineTool({
   },
 })
 
-/** 代码侧约束：最多 3 个主要方向 + must_rule_out；每个方向必须有反对依据或不确定点 */
-function sanitizeAnalysis(output: CaseAnalyzeOutput, state: CaseState): CaseAnalyzeOutput {
+/** 代码侧约束：最多 3 个主要方向 + must_rule_out */
+function sanitizeInitialHypotheses(output: CaseAnalyzeOutput, _state: CaseState): CaseAnalyzeOutput {
   const mustRuleOut = output.hypotheses.filter((h) => h.likelihood === 'must_rule_out')
   const others = output.hypotheses.filter((h) => h.likelihood !== 'must_rule_out').slice(0, 3)
 
@@ -77,14 +74,11 @@ function sanitizeAnalysis(output: CaseAnalyzeOutput, state: CaseState): CaseAnal
     return h
   })
 
-  // 没有任何证据时不允许 canFinalAnswer（§8.3 final_answer 选择条件）
-  const canFinalAnswer = output.canFinalAnswer && state.evidence.length > 0
-
-  return { ...output, hypotheses, canFinalAnswer }
+  return { ...output, hypotheses }
 }
 
 /** LLM 不可用时：用症状域种子生成低置信方向 */
-function fallbackAnalysis(state: CaseState): CaseAnalyzeOutput {
+function fallbackInitialHypotheses(state: CaseState): CaseAnalyzeOutput {
   const config = getDomainConfig(state.symptomDomain.primaryDomain)
   const seeds = config?.commonHypothesisSeeds.slice(0, 3) ?? ['需线下评估的不适方向']
 
@@ -103,7 +97,7 @@ function fallbackAnalysis(state: CaseState): CaseAnalyzeOutput {
     missingInfo: [],
     stageConclusion: 'AI 分析暂不可用，仅提供该症状域常见方向作低置信参考，建议线下确认。',
     canFinalAnswer: false,
-    shouldAskUser: false,
+    shouldAskUser: true,
     shouldSearchMore: false,
     shouldGenerateCarePlan: false,
   }

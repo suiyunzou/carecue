@@ -6,7 +6,7 @@ import type { CaseState } from '../case/CaseState.ts'
 import type { MedicalSearchTask } from '../actionSchema.ts'
 import { medicalSearchTaskSchema } from '../actionSchema.ts'
 import type { LlmClient } from '../llm/llmClient.ts'
-import { LlmUnavailableError } from '../llm/llmClient.ts'
+import { LlmOutputInvalidError, LlmUnavailableError } from '../llm/llmClient.ts'
 import { buildGenerateSearchTasksPrompt } from '../llm/prompts/generateSearchTasks.prompt.ts'
 import { getDomainConfig } from '../symptoms/symptomDomainConfig.ts'
 import type { TraceLogger } from '../logs/traceLogger.ts'
@@ -32,8 +32,10 @@ export async function generateSearchTasks(
     })
     return result.tasks
   } catch (error) {
-    if (!(error instanceof LlmUnavailableError)) throw error
-    traceLogger?.log(state.caseId, 'llm_fallback', { reason: 'search.generate_tasks: LLM 不可用，使用症状域检索模板降级' })
+    if (!(error instanceof LlmUnavailableError) && !(error instanceof LlmOutputInvalidError)) throw error
+    traceLogger?.log(state.caseId, 'llm_fallback', {
+      reason: `search.generate_tasks: LLM ${error instanceof LlmOutputInvalidError ? '输出不符合 schema' : '不可用'}，使用症状域检索模板降级`,
+    })
     return buildTemplateSearchTasks(state)
   }
 }

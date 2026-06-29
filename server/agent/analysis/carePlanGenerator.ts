@@ -6,7 +6,7 @@ import { defineTool } from '../tools/Tool.ts'
 import type { CarePlan, CaseState } from '../case/CaseState.ts'
 import { requireHypothesesAndEvidence } from '../tools/ToolGuards.ts'
 import { buildGenerateCarePlanPrompt } from '../llm/prompts/generateCarePlan.prompt.ts'
-import { LlmUnavailableError } from '../llm/llmClient.ts'
+import { isRecoverableLlmError } from '../llm/llmClient.ts'
 
 export const carePlanOutputSchema = z.object({
   selfCareAdvice: z.array(z.string()).min(1),
@@ -50,7 +50,7 @@ export const carePlanGenerateTool = defineTool({
         trace: { traceLogger: ctx.traceLogger, caseId: ctx.caseId, node: 'care_plan.generate' },
       })
     } catch (error) {
-      if (!(error instanceof LlmUnavailableError)) throw error
+      if (!isRecoverableLlmError(error)) throw error
       ctx.traceLogger.log(ctx.caseId, 'llm_fallback', { reason: 'care_plan.generate 使用证据直出降级' })
       ctx.markFallback('care_plan.generate: LLM 不可用，直接汇总证据原文作为护理建议')
       return fallbackCarePlan(ctx.state)

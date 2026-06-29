@@ -35,9 +35,6 @@ try {
     if (events[0].timestamp) {
       const d = new Date(events[0].timestamp)
       const pad = (n: number) => n.toString().padStart(2, '0')
-      const dateStr = `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`
-      const timeStr = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-      
       // 避免文件名中出现不支持的字符 (如:冒号)，所以文件名中用 '-' 代替 ':'，但为了按照要求显示，只在目录名和文件名中尽量贴近
       // 如果严格要求文件名中包含 `:`，在 Windows 等系统中是不允许的。
       // 因此我们按照标准格式：2026-06-22 18-18-21-

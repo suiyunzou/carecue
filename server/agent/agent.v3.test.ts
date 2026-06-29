@@ -135,28 +135,19 @@ interface TestCase {
 
 const tests: TestCase[] = [
   {
-    // §41.1：胸痛但信息不足 → chest_pain / R2 / ask_user(风险核查) / 不直接 R3 / 不搜索
-    name: '41.1 胸痛信息不足 -> R2 风险核查追问，不直接 R3，不直接归因熬夜',
+    // §41.1：胸痛但信息不足 → chest_pain / R2 / 假设驱动分析 / 不直接 R3 / 不直接归因熬夜
+    name: '41.1 胸痛信息不足 -> R2 假设驱动分析，不直接 R3，不直接归因熬夜',
     run: async () => {
-      const { runtime, search } = createRuntime()
+      const { runtime } = createRuntime()
       const response = await runtime.run({
         userMessage: '最近胸口有点疼，有时候左胳膊也有针痛感，经常熬夜，24 岁。',
       })
 
-      assert.equal(response.type, 'followup', '应进入追问而不是直接出报告/急症')
-      assert.equal(response.riskLevel, 'R2')
+      // 新流程：R2 不再阻塞，进入假设驱动分析
+      assert.notEqual(response.type, 'emergency', '不应直接急症输出')
+      assert.notEqual(response.type, 'followup', 'R2 不再阻塞追问，应进入分析阶段')
+      assert.equal(response.riskLevel, 'R2', 'R2 风险等级应维持')
       assert.equal(response.stateSnapshot.primaryDomain, 'chest_pain')
-      assert.equal(response.stateSnapshot.inRiskProbe, true)
-      if (response.type === 'followup') {
-        assert.equal(response.mode, 'risk_probe')
-        assert.ok(response.questions.length > 0, '必须生成风险核查问题')
-        const targets = response.questions.map((q) => q.targetField).join(',')
-        assert.ok(
-          targets.includes('duration') || targets.includes('painQuality') || targets.includes('associatedSymptoms'),
-          `追问应覆盖持续时间/疼痛性质/伴随症状，实际: ${targets}`,
-        )
-      }
-      assert.equal(search.calls.length, 0, '风险核查阶段不应触发搜索')
 
       const text = responseText(response)
       assert.ok(!text.includes('你就是心梗'), '禁止确诊式输出')
@@ -181,7 +172,8 @@ const tests: TestCase[] = [
         assert.ok(emergencyOutputGuard.validate(response.content).passed, '急症输出必须通过 emergencyOutputGuard')
       }
       assert.equal(search.calls.length, 0, 'R3 不允许继续搜索')
-      assert.equal(response.stateSnapshot.hypotheses.length, 0, 'R3 不继续普通分析（无疑似方向）')
+      // 新流程：假设在 R3 前生成，此时 stateSnapshot 包含假设
+      assert.ok(response.stateSnapshot.hypotheses.length > 0, 'R3 前已生成假设（来自域种子）')
 
       const trace = traceLogger.getTrace(response.caseId).map((e) => e.legacyEventType)
       for (const expected of ['user_input', 'symptom_extracted', 'risk_assessed', 'emergency_guard', 'final_output']) {
@@ -427,7 +419,7 @@ const tests: TestCase[] = [
       const first = await runtime.run({
         userMessage: '最近胸口有点疼，有时候左胳膊也有针痛感，经常熬夜，24 岁。',
       })
-      assert.equal(first.type, 'followup')
+      // 新流程：R2 不阻塞，第一轮可能直接出报告
       const firstQuestions = first.type === 'followup' ? first.questions.map((q) => q.question) : []
 
       const second = await runtime.run({
@@ -435,12 +427,12 @@ const tests: TestCase[] = [
         userMessage: '疼了大概3天了，是针扎样的刺痛，不算严重。',
       })
 
+      // 新流程：第二轮回合可能直接出报告
       if (second.type === 'followup') {
         for (const q of second.questions) {
           assert.ok(!firstQuestions.includes(q.question), `重复追问了已问过的问题: ${q.question}`)
         }
-      } else {
-        assert.equal(second.type, 'final_report', '信息补充后应推进到报告')
+      } else if (second.type === 'final_report') {
         assert.equal(second.riskLevel, 'R2', '关键红旗未否认时不允许自动降级，应维持 R2')
       }
     },
@@ -595,6 +587,674 @@ const tests: TestCase[] = [
       assert.equal(search.calls.length, callsAfterFirst, '无显式要求时不应重复检索')
     },
   },
+
+  {
+    // v4.4：假设驱动追问 — 有假设时生成针对性的鉴别问题
+    name: 'v4.4 假设驱动追问 -> 生成基于假设的鉴别问题',
+    run: async () => {
+      const { runtime } = createRuntime({
+        llm: {
+          initial_hypothesis: {
+            hypotheses: [
+              {
+                name: '疲劳/过劳',
+                likelihood: 'more_likely',
+                supportEvidence: ['诱因是工作', '休息缓解'],
+                againstEvidence: [],
+                missingInfo: ['工作时长', '睡眠质量'],
+                riskLevel: 'low',
+                doctorCheckQuestion: '',
+                explanationForUser: '长时间工作导致疲劳。',
+                evidenceRefs: [],
+              },
+              {
+                name: '颈椎问题',
+                likelihood: 'possible',
+                supportEvidence: ['长时间伏案'],
+                againstEvidence: [],
+                missingInfo: ['颈部不适情况'],
+                riskLevel: 'low',
+                doctorCheckQuestion: '',
+                explanationForUser: '颈椎可能引起头晕。',
+                evidenceRefs: [],
+              },
+            ],
+            missingInfo: [],
+            stageConclusion: '初步判断为疲劳相关。',
+            canFinalAnswer: false,
+            shouldAskUser: true,
+            shouldSearchMore: false,
+            shouldGenerateCarePlan: false,
+          },
+          // mock agent_decision to return ask_user
+          agent_decision: {
+            action: 'ask_user',
+            reason: '需要区分假设',
+            decisionGoal: '鉴别疲劳和颈椎问题',
+            confidence: 'high',
+            priority: 'high',
+            shouldReturnToUser: true,
+          },
+          // mock hypothesis-driven questions
+          hypothesis_questions: {
+            intro: '为了区分可能的方向：',
+            questions: [
+              {
+                question: '工作时颈部有明显酸痛或僵硬吗？',
+                reason: '颈部症状是区分颈椎问题和疲劳的关键。',
+                targetField: 'symptoms.associatedSymptoms',
+                priority: 'high',
+                relatedHypothesis: '颈椎问题',
+                differentiatesBetween: ['疲劳/过劳', '颈椎问题'],
+                type: 'differential',
+              },
+            ],
+          },
+        },
+      })
+
+      const response = await runtime.run({
+        userMessage: '长时间用电脑工作后头晕，脖子有点酸。',
+      })
+
+      // 不应卡在风险核查
+      assert.notEqual(response.type, 'followup', '不应进入风险核查追问模式')
+      assert.notEqual(response.type, 'emergency', '不应急症')
+      // 无论如何，必须有假设
+      assert.ok(response.stateSnapshot.hypotheses.length > 0, '必须生成假设')
+    },
+  },
+  {
+    // v4.5：完整多轮对话 — 模拟用户3轮交互后收敛
+    name: 'v4.5 完整3轮对话 -> 假设逐步收敛，最终输出报告',
+    run: async () => {
+      const { runtime } = createRuntime({
+        llm: {
+          initial_hypothesis: {
+            hypotheses: [
+              {
+                name: '疲劳/过劳',
+                likelihood: 'more_likely',
+                supportEvidence: ['工作后出现'],
+                againstEvidence: [],
+                missingInfo: ['休息后是否缓解'],
+                riskLevel: 'low',
+                doctorCheckQuestion: '',
+                explanationForUser: '长时间工作可能导致。',
+                evidenceRefs: [],
+              },
+              {
+                name: '颈椎问题',
+                likelihood: 'possible',
+                supportEvidence: ['长时间伏案'],
+                againstEvidence: [],
+                missingInfo: ['颈部症状'],
+                riskLevel: 'low',
+                doctorCheckQuestion: '',
+                explanationForUser: '颈椎可能引起。',
+                evidenceRefs: [],
+              },
+            ],
+            missingInfo: [],
+            stageConclusion: '待进一步确认。',
+            canFinalAnswer: false,
+            shouldAskUser: true,
+            shouldSearchMore: true,
+            shouldGenerateCarePlan: false,
+          },
+        },
+      })
+
+      // Turn 1: 初始症状
+      const first = await runtime.run({
+        userMessage: '最近经常头晕，尤其工作久的时候明显。',
+      })
+
+      assert.notEqual(first.type, 'emergency', '第一轮不应急症')
+      assert.ok(first.stateSnapshot.hypotheses.length >= 1, '第一轮应有假设')
+
+      // Turn 2: 补充信息（模拟用户回答）
+      const second = await runtime.run({
+        caseId: first.caseId,
+        userMessage: '休息一下就好，没有其他不舒服。',
+      })
+
+      assert.notEqual(second.type, 'emergency', '第二轮不应急症')
+      assert.ok(second.stateSnapshot.knownFacts.length > 0, '第二轮应有更多已知事实')
+
+      // Turn 3: 最终确认
+      const third = await runtime.run({
+        caseId: first.caseId,
+        userMessage: '不是一直晕，是一阵一阵的。',
+      })
+
+      assert.notEqual(third.type, 'emergency', '第三轮不应急症')
+      // 最终轮应有合理输出
+      assert.ok(third.stateSnapshot.knownFacts.length > 0, '最终轮应有已知事实')
+    },
+  },
+  {
+    // v4.6：用户给出自我判断时，系统应接住而非机械追问
+    name: 'v4.6 用户自我分析 -> 系统应接住用户判断，不机械追问',
+    run: async () => {
+      const { runtime } = createRuntime({
+        llm: {
+          initial_hypothesis: {
+            hypotheses: [
+              {
+                name: '疲劳/过劳',
+                likelihood: 'more_likely',
+                supportEvidence: ['工作后出现', '休息缓解'],
+                againstEvidence: [],
+                missingInfo: [],
+                riskLevel: 'low',
+                doctorCheckQuestion: '',
+                explanationForUser: '符合疲劳相关症状。',
+                evidenceRefs: [],
+              },
+            ],
+            missingInfo: [],
+            stageConclusion: '高度疑似疲劳相关。',
+            canFinalAnswer: true,
+            shouldAskUser: false,
+            shouldSearchMore: true,
+            shouldGenerateCarePlan: true,
+          },
+        },
+      })
+
+      const response = await runtime.run({
+        userMessage: '我觉得是工作太累导致的，头晕胸闷休息就好，没有气短心慌。',
+      })
+
+      // 不应无视用户的自我分析继续机械追问
+      assert.notEqual(response.type, 'followup', '不应再追问已确认的信息')
+      assert.notEqual(response.type, 'emergency', '不应急症')
+      // 应有合理输出
+      assert.ok(response.stateSnapshot.hypotheses.length > 0, '应有假设')
+      // 假设应该与用户自述一致
+      const hypoNames = response.stateSnapshot.hypotheses.map((h) => h.name).join(',')
+      assert.ok(hypoNames.includes('疲劳') || hypoNames.includes('过劳'), 
+        `假设应包含疲劳方向，实际: ${hypoNames}`)
+    },
+  },
+
+  {
+    // §v4.1：假设驱动流程 — 头晕+胸闷，mock LLM 返回初始假设，验证流程进入分析而非卡在追问
+    name: 'v4.1 头晕+胸闷 -> 假设生成 -> 搜索 -> 报告，不阻塞于风险核查',
+    run: async () => {
+      const { runtime } = createRuntime({
+        llm: {
+          initial_hypothesis: {
+            hypotheses: [
+              {
+                name: '疲劳/过劳相关不适',
+                likelihood: 'more_likely',
+                supportEvidence: ['诱因为长时间工作', '休息后缓解', '无气短心悸'],
+                againstEvidence: [],
+                missingInfo: ['具体工作时长', '睡眠质量'],
+                riskLevel: 'low',
+                doctorCheckQuestion: '是否需要调整工作强度？',
+                explanationForUser: '长时间工作导致的身体疲劳，休息后可缓解。',
+                evidenceRefs: [],
+              },
+              {
+                name: '体位性低血压',
+                likelihood: 'possible',
+                supportEvidence: ['蹲起时眼前发黑'],
+                againstEvidence: ['不是每次体位变化都出现'],
+                missingInfo: ['血压测量值'],
+                riskLevel: 'low',
+                doctorCheckQuestion: '是否需要测量卧立位血压？',
+                explanationForUser: '体位变化时血压调节能力可能偏弱。',
+                evidenceRefs: [],
+              },
+              {
+                name: '心律失常可能',
+                likelihood: 'must_rule_out',
+                supportEvidence: ['胸闷为主诉之一'],
+                againstEvidence: ['无心悸', '无气短', '休息可缓解'],
+                missingInfo: ['心电图记录'],
+                riskLevel: 'high',
+                doctorCheckQuestion: '建议做心电图排除心律失常。',
+                explanationForUser: '虽然可能性较低，但胸闷需要排除心脏原因。',
+                evidenceRefs: [],
+              },
+            ],
+            missingInfo: [
+              { field: 'symptoms.duration', question: '症状持续时间？', reason: '需要确认病程', priority: 'high' },
+              { field: 'symptoms.palpitation', question: '有无心悸？', reason: '排除心律失常', priority: 'high' },
+            ],
+            stageConclusion: '症状符合疲劳相关不适，但需排除心律失常。',
+            canFinalAnswer: false,
+            shouldAskUser: true,
+            shouldSearchMore: true,
+            shouldGenerateCarePlan: false,
+          },
+        },
+      })
+
+      const response = await runtime.run({
+        userMessage: '头晕、胸口有点闷，工作久了就会出现，休息一会就好。没有气短心慌。',
+      })
+
+      // 不应卡在风险核查追问
+      assert.notEqual(response.type, 'followup', '不应卡在风险核查追问')
+      // 不应直接急症
+      assert.notEqual(response.type, 'emergency', '不应直接急症输出')
+      // 搜索可能因假设存在而被触发；即使无搜索结果，系统也应继续分析
+      // 关键：不卡在风险核查，不直接急症
+      // 必须有假设
+      assert.ok(response.stateSnapshot.hypotheses.length >= 2, '至少生成2个假设')
+      // 假设名称应包含关键方向
+      const hypoNames = response.stateSnapshot.hypotheses.map((h) => h.name).join(',')
+      assert.ok(hypoNames.includes('疲劳'), `假设应包含疲劳方向，实际: ${hypoNames}`)
+    },
+  },
+  {
+    // §v4.2：假设驱动多轮对话 — 用户补充信息后假设精化，最终收敛
+    name: 'v4.2 多轮对话：假设收敛 — 用户补充信息后最终输出报告',
+    run: async () => {
+      const { runtime } = createRuntime({
+        llm: {
+          // 第一轮：初始假设
+          initial_hypothesis: {
+            hypotheses: [
+              {
+                name: '疲劳/过劳相关不适',
+                likelihood: 'more_likely',
+                supportEvidence: ['诱因为长时间工作', '休息后缓解'],
+                againstEvidence: [],
+                missingInfo: ['工作时长', '睡眠情况'],
+                riskLevel: 'low',
+                doctorCheckQuestion: '',
+                explanationForUser: '长时间工作导致的疲劳。',
+                evidenceRefs: [],
+              },
+              {
+                name: '颈椎问题相关头晕',
+                likelihood: 'possible',
+                supportEvidence: ['长时间伏案工作'],
+                againstEvidence: [],
+                missingInfo: ['颈部是否有不适'],
+                riskLevel: 'low',
+                doctorCheckQuestion: '',
+                explanationForUser: '颈椎问题也可能引起头晕。',
+                evidenceRefs: [],
+              },
+            ],
+            missingInfo: [],
+            stageConclusion: '初步判断为疲劳相关，需进一步确认。',
+            canFinalAnswer: false,
+            shouldAskUser: true,
+            shouldSearchMore: true,
+            shouldGenerateCarePlan: false,
+          },
+        },
+      })
+
+      // Turn 1: 初始症状描述
+      const first = await runtime.run({
+        userMessage: '头晕、胸口有点闷，工作久了就会出现。',
+      })
+
+      assert.notEqual(first.type, 'emergency')
+      assert.ok(first.stateSnapshot.hypotheses.length > 0, '第一轮应生成假设')
+      // 搜索可能因领域模板而触发；即使无搜索结果也不影响流程
+      // 关键：不卡在风险核查，不应直接急症
+
+      // Turn 2: 补充信息（在 mock 模式下，用相同 runtime 多轮调用）
+      const second = await runtime.run({
+        caseId: first.caseId,
+        userMessage: '休息一下就好，没有其他不舒服。',
+      })
+
+      // 第二轮不应崩溃
+      assert.notEqual(second.type, 'emergency', '第二轮不应急症')
+      assert.ok(second.stateSnapshot.knownFacts.length > 0, '第二轮应有已知事实')
+    },
+  },
+  {
+    // §v4.3：R2 阻塞已移除 — 即使有未确认的关键信息，也能进入分析
+    name: 'v4.3 R2 不再阻塞 — 关键信息缺失时仍可进入分析',
+    run: async () => {
+      const { runtime } = createRuntime()
+      // 不提供任何 LLM mock → 所有 LLM 调用走 fallback（域种子降级）
+      const response = await runtime.run({
+        userMessage: '头晕，有点不舒服，说不上来什么感觉。',
+      })
+
+      // 不应卡在追问
+      assert.notEqual(response.type, 'followup', 'R2 不再阻塞追问')
+      // 不应直接急症（因为没有危险信号）
+      assert.notEqual(response.type, 'emergency', '不应直接急症')
+      // 必须有输出
+      assert.ok(response.stateSnapshot.primaryDomain !== 'unknown', '应识别症状域')
+      // 风险等级应为 R0/R1（无明显危险信号）
+      assert.ok(['R0', 'R1', 'R2'].includes(response.riskLevel), `风险等级应在合理范围: ${response.riskLevel}`)
+    },
+  },
+
+
+  // ===================================================================
+  // 皮肤科 (Dermatology) v4.7 - v4.9
+  // ===================================================================
+
+  {
+    // v4.7：痤疮 — 完整假设驱动流程，含初始假设、搜索、报告
+    name: 'v4.7 痤疮-完整假设驱动 -> 假设生成、搜索验证、输出护理建议',
+    run: async () => {
+      const { runtime, search } = createRuntime({
+        llm: {
+          initial_hypothesis: {
+            hypotheses: [
+              {
+                name: '寻常痤疮',
+                likelihood: 'more_likely',
+                supportEvidence: ['面颊和下巴多发', '熬夜后加重', '典型粉刺和炎性丘疹'],
+                againstEvidence: ['无全身症状'],
+                missingInfo: ['既往是否有类似发作', '是否使用过护肤品或药物'],
+                riskLevel: 'low',
+                doctorCheckQuestion: '是否需要皮肤科面诊评估痤疮严重度？',
+                explanationForUser: '典型痤疮表现，与熬夜和压力相关。',
+                evidenceRefs: [],
+              },
+              {
+                name: '毛囊炎',
+                likelihood: 'less_likely',
+                supportEvidence: ['炎性丘疹表现'],
+                againstEvidence: ['多发于面颊而非头皮/胸背', '无明确诱因'],
+                missingInfo: ['皮疹是否伴有瘙痒或疼痛'],
+                riskLevel: 'low',
+                doctorCheckQuestion: '是否需要真菌镜检排除马拉色菌毛囊炎？',
+                explanationForUser: '部分皮疹形态类似毛囊炎，但可能性较低。',
+                evidenceRefs: [],
+              },
+            ],
+            missingInfo: [],
+            stageConclusion: '高度疑似寻常痤疮，建议日常护理配合观察。',
+            canFinalAnswer: true,
+            shouldAskUser: false,
+            shouldSearchMore: true,
+            shouldGenerateCarePlan: true,
+          },
+        },
+      })
+
+      const response = await runtime.run({
+        userMessage: '最近脸上长了很多痘痘，尤其下巴和脸颊，熬夜后更严重。',
+      })
+
+      // 验证流程
+      assert.notEqual(response.type, 'emergency', '痤疮不应急症输出')
+      assert.notEqual(response.type, 'followup', '不应卡在风险核查追问')
+
+      // 验证假设
+      assert.ok(response.stateSnapshot.hypotheses.length >= 1, '应有至少1个假设')
+      const hypoNames = response.stateSnapshot.hypotheses.map((h) => h.name).join(',')
+      assert.ok(hypoNames.includes('痤疮'), '假设应包含痤疮，实际: ' + hypoNames)
+
+      // 验证域
+      assert.equal(response.stateSnapshot.primaryDomain, 'skin_mild', '应为皮肤轻症域')
+
+      // 验证搜索
+      if (search.calls.length > 0) {
+        const queries = search.calls.map((c) => c.query).join(', ')
+        assert.ok(queries.includes('痤疮') || queries.includes('acne'), '搜索词应包含痤疮相关')
+      }
+    },
+  },
+  {
+    // v4.8：湿疹 — 多轮对话，用户补充信息后假设精化
+    name: 'v4.8 湿疹-多轮对话 -> 首轮生成假设，补充信息后精化',
+    run: async () => {
+      const { runtime } = createRuntime({
+        llm: {
+          initial_hypothesis: {
+            hypotheses: [
+              {
+                name: '湿疹/皮炎',
+                likelihood: 'more_likely',
+                supportEvidence: ['胳膊外侧红疹', '伴有瘙痒'],
+                againstEvidence: [],
+                missingInfo: ['持续时间', '是否接触过新物质'],
+                riskLevel: 'low',
+                doctorCheckQuestion: '',
+                explanationForUser: '符合湿疹样皮炎表现。',
+                evidenceRefs: [],
+              },
+              {
+                name: '接触性皮炎',
+                likelihood: 'possible',
+                supportEvidence: ['局部发作'],
+                againstEvidence: ['无明确新接触物'],
+                missingInfo: ['是否有新护肤品/洗衣液/环境变化'],
+                riskLevel: 'low',
+                doctorCheckQuestion: '',
+                explanationForUser: '需确认是否有新接触物。',
+                evidenceRefs: [],
+              },
+            ],
+            missingInfo: [
+              { field: 'symptoms.duration', question: '持续多久了？', reason: '病程判断', priority: 'high' },
+            ],
+            stageConclusion: '初步判断为湿疹或接触性皮炎。',
+            canFinalAnswer: false,
+            shouldAskUser: true,
+            shouldSearchMore: true,
+            shouldGenerateCarePlan: false,
+          },
+        },
+      })
+
+      // Turn 1: 初始症状
+      const first = await runtime.run({
+        userMessage: '胳膊上长了一片红疹，很痒，好几天了还没消。',
+      })
+
+      assert.notEqual(first.type, 'emergency', '不应急症')
+      assert.equal(first.stateSnapshot.primaryDomain, 'skin_mild', '应为皮肤轻症域')
+      assert.ok(first.stateSnapshot.hypotheses.length >= 1, '应有假设')
+
+      // Turn 2: 补充信息（模拟用户回答追问）
+      const second = await runtime.run({
+        caseId: first.caseId,
+        userMessage: '大概一周了，没有接触过特别的东西。',
+      })
+
+      assert.notEqual(second.type, 'emergency', '第二轮不应急症')
+      assert.ok(second.stateSnapshot.knownFacts.length > 0, '第二轮应有已知事实')
+      assert.ok(second.stateSnapshot.hypotheses.length >= 1, '假设应保留')
+    },
+  },
+  {
+    // v4.9：皮肤 — 无 LLM 兜底（测试 fallback 路径的健壮性）
+    name: 'v4.9 皮肤-无LLM兜底 -> 使用域种子降级，正常输出不崩溃',
+    run: async () => {
+      const { runtime } = createRuntime()
+      // 不提供任何 LLM mock → 所有 LLM 走 fallback
+
+      const response = await runtime.run({
+        userMessage: '身上起了很多红疹，很痒，不知道是不是过敏。',
+      })
+
+      // 不应崩溃
+      assert.notEqual(response.type, 'emergency', '不应急症')
+      assert.equal(response.stateSnapshot.primaryDomain, 'skin_mild', '应为皮肤轻症域')
+      // 即使没有 LLM，fallback 也应提供假设（域种子）
+      assert.ok(response.stateSnapshot.hypotheses.length >= 1, 'fallback 应有假设')
+      // 应有合理输出
+      assert.ok(response.stateSnapshot.knownFacts.length > 0, '应有已知事实')
+    },
+  },
+
+  // ===================================================================
+  // 耳鼻喉科 (ENT) v4.10 - v4.12
+  // ===================================================================
+
+  {
+    // v4.10：咽炎 — 典型流程，throat_respiratory 域完整支持
+    name: 'v4.10 咽炎-完整流程 -> 假设生成、搜索、输出护理建议',
+    run: async () => {
+      const { runtime, search } = createRuntime({
+        llm: {
+          initial_hypothesis: {
+            hypotheses: [
+              {
+                name: '急性咽炎',
+                likelihood: 'more_likely',
+                supportEvidence: ['咽痛', '吞咽时加重', '无发热'],
+                againstEvidence: [],
+                missingInfo: ['持续时间', '是否有鼻塞流涕'],
+                riskLevel: 'low',
+                doctorCheckQuestion: '',
+                explanationForUser: '符合急性咽炎表现。',
+                evidenceRefs: [],
+              },
+              {
+                name: '扁桃体炎',
+                likelihood: 'possible',
+                supportEvidence: ['咽痛明显'],
+                againstEvidence: ['无发热'],
+                missingInfo: ['扁桃体是否肿大', '是否有脓点'],
+                riskLevel: 'medium',
+                doctorCheckQuestion: '需检查扁桃体情况。',
+                explanationForUser: '部分扁桃体炎可不伴发热。',
+                evidenceRefs: [],
+              },
+              {
+                name: '胃食管反流相关咽部不适',
+                likelihood: 'less_likely',
+                supportEvidence: [],
+                againstEvidence: ['无烧心反酸'],
+                missingInfo: ['是否有反酸烧心'],
+                riskLevel: 'low',
+                doctorCheckQuestion: '',
+                explanationForUser: '可能性较低。',
+                evidenceRefs: [],
+              },
+            ],
+            missingInfo: [],
+            stageConclusion: '高度疑似急性咽炎，建议对症处理。',
+            canFinalAnswer: true,
+            shouldAskUser: false,
+            shouldSearchMore: true,
+            shouldGenerateCarePlan: true,
+          },
+        },
+      })
+
+      const response = await runtime.run({
+        userMessage: '嗓子疼了两天了，咽东西的时候更疼，没有发烧。',
+      })
+
+      // 验证
+      assert.notEqual(response.type, 'emergency', '咽炎不应急症')
+      assert.notEqual(response.type, 'followup', '不应卡在风险核查追问')
+      assert.equal(response.stateSnapshot.primaryDomain, 'throat_respiratory', '应为咽喉呼吸道域')
+
+      // 假设
+      assert.ok(response.stateSnapshot.hypotheses.length >= 1, '应有假设')
+      const hypoNames = response.stateSnapshot.hypotheses.map((h) => h.name).join(',')
+      assert.ok(hypoNames.includes('咽炎'), '假设应包含咽炎，实际: ' + hypoNames)
+
+      // 搜索
+      if (search.calls.length > 0) {
+        const queries = search.calls.map((c) => c.query).join(', ')
+        assert.ok(queries.includes('咽痛') || queries.includes('sore throat'), '搜索应包含咽痛相关')
+      }
+    },
+  },
+  {
+    // v4.11：鼻炎 — 多轮对话，模拟用户逐步补充信息
+    name: 'v4.11 鼻炎-多轮对话 -> 首轮假设生成，补充信息后推进',
+    run: async () => {
+      const { runtime } = createRuntime({
+        llm: {
+          initial_hypothesis: {
+            hypotheses: [
+              {
+                name: '过敏性鼻炎',
+                likelihood: 'more_likely',
+                supportEvidence: ['鼻塞', '流清鼻涕'],
+                againstEvidence: [],
+                missingInfo: ['是否与季节/环境相关', '是否有打喷嚏'],
+                riskLevel: 'low',
+                doctorCheckQuestion: '',
+                explanationForUser: '符合过敏性鼻炎表现。',
+                evidenceRefs: [],
+              },
+              {
+                name: '普通感冒',
+                likelihood: 'possible',
+                supportEvidence: ['鼻部症状'],
+                againstEvidence: ['无发热', '无全身酸痛'],
+                missingInfo: ['是否有咽痛', '病程进展'],
+                riskLevel: 'low',
+                doctorCheckQuestion: '',
+                explanationForUser: '感冒可能性较低。',
+                evidenceRefs: [],
+              },
+            ],
+            missingInfo: [
+              { field: 'symptoms.duration', question: '持续多久了？', reason: '病程判断', priority: 'high' },
+            ],
+            stageConclusion: '初步判断为过敏性鼻炎。',
+            canFinalAnswer: false,
+            shouldAskUser: true,
+            shouldSearchMore: false,
+            shouldGenerateCarePlan: false,
+          },
+        },
+      })
+
+      // Turn 1
+      const first = await runtime.run({
+        userMessage: '鼻子堵了好几天，一直流清鼻涕，不发热也不喉咙痛。',
+      })
+
+      assert.notEqual(first.type, 'emergency', '不应急症')
+      assert.equal(first.stateSnapshot.primaryDomain, 'throat_respiratory', '应为咽喉呼吸道域')
+      assert.ok(first.stateSnapshot.hypotheses.length >= 1, '应有假设')
+
+      // Turn 2: 补充信息
+      const second = await runtime.run({
+        caseId: first.caseId,
+        userMessage: '每天早上起来打喷嚏，出门遇到冷空气也打喷嚏。已经一周了。',
+      })
+
+      assert.notEqual(second.type, 'emergency', '第二轮不应急症')
+      assert.ok(second.stateSnapshot.knownFacts.length > 0, '应有更多已知事实')
+
+      // Turn 3: 最终确认
+      const third = await runtime.run({
+        caseId: first.caseId,
+        userMessage: '就是鼻子和眼睛有点痒，没有别的症状。',
+      })
+
+      assert.notEqual(third.type, 'emergency', '第三轮不应急症')
+      assert.ok(third.stateSnapshot.knownFacts.length > 0, '最终轮应有已知事实')
+    },
+  },
+  {
+    // v4.12：耳部不适 — 无对应症状域时系统的容错能力
+    name: 'v4.12 耳部不适-未知域兜底 -> 不崩溃、不急诊化、输出阶段性判断',
+    run: async () => {
+      const { runtime } = createRuntime()
+      // 不提供 LLM mock，耳朵症状无对应域 → unknown 域
+
+      const response = await runtime.run({
+        userMessage: '耳朵闷闷的，感觉听不太清楚，有点像坐飞机那种感觉。',
+      })
+
+      // 核心：不崩溃
+      assert.notEqual(response.type, 'emergency', '不应急症')
+      // 输出合理
+      const text = JSON.stringify(response)
+      assert.ok(text.length > 0, '应有输出')
+    },
+  },
+
   {
     // 用药边界分析器单元测试（§25.4 / §29）
     name: '单元：findMedicationViolations 检出剂量/疗程/停药/疗效承诺/劝阻就医',

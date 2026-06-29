@@ -8,7 +8,7 @@ import { SYMPTOM_DOMAINS, type SymptomDomain } from './symptomDomain.ts'
 import { SYMPTOM_DOMAIN_CONFIGS, getDomainConfig } from './symptomDomainConfig.ts'
 import { normalizeSymptomText } from './symptomNormalizer.ts'
 import { buildClassifySymptomDomainPrompt } from '../llm/prompts/classifySymptomDomain.prompt.ts'
-import { LlmUnavailableError } from '../llm/llmClient.ts'
+import { isRecoverableLlmError } from '../llm/llmClient.ts'
 
 const inputSchema = z.object({})
 
@@ -28,7 +28,7 @@ export const symptomDomainClassifyTool = defineTool({
   inputSchema,
   outputSchema,
   guardLevel: 'safe_read',
-  timeoutMs: 20000,
+  timeoutMs: 25000,
 
   async call(_input, ctx) {
     const byTrigger = classifyByTriggerTerms(ctx.state)
@@ -51,7 +51,7 @@ export const symptomDomainClassifyTool = defineTool({
         supportedDepth: config?.supportedDepth ?? 'red_flag_only',
       }
     } catch (error) {
-      if (!(error instanceof LlmUnavailableError)) throw error
+      if (!isRecoverableLlmError(error)) throw error
       ctx.markFallback('symptom_domain_classify: LLM 不可用，使用触发词匹配结果降级')
       return byTrigger
     }

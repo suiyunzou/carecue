@@ -16,6 +16,10 @@ export const AGENT_LIMITS = {
   maxAskedQuestionsTotal: 8,
   maxQuestionsPerTurn: 3,
   maxFinalReportChars: 3000,
+  /** 假设驱动推理的最大轮次（超过则强制输出结论） */
+  maxHypothesisRounds: 5,
+  /** 风险核查追问的最大轮次（超过则不再追问，直接进入分析） */
+  maxRiskProbeRounds: 3,
 } as const
 
 export type AgentLimits = typeof AGENT_LIMITS

@@ -199,8 +199,11 @@ const generalDiscomfortDomain: SymptomDomainConfig = {
   redFlagRuleIds: ['GENERAL_KEY_INFO_MISSING'],
   redFlagSignals: ['晕厥', '意识异常', '胸闷', '呼吸困难', '明显体重下降'],
   commonHypothesisSeeds: ['睡眠不足或疲劳相关不适', '亚急性病毒感染恢复期', '贫血或甲状腺相关待排'],
-  searchQueryTemplates: [],
-  supportedDepth: 'red_flag_only',
+  searchQueryTemplates: [
+    { query: '头晕 胸闷 鉴别诊断 疲劳 红旗信号', purpose: 'differential', language: 'zh', preferredSources: ['msdmanuals.cn'] },
+    { query: 'dizziness chest tightness fatigue when to see doctor', purpose: 'self_care', language: 'en', preferredSources: ['nhs.uk'] },
+  ],
+  supportedDepth: 'full',
 }
 
 export const SYMPTOM_DOMAIN_CONFIGS: SymptomDomainConfig[] = [

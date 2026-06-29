@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { defineTool } from '../tools/Tool.ts'
 import { blockWhenEmergency } from '../tools/ToolGuards.ts'
 import { buildGenerateReportPrompt } from '../llm/prompts/generateReport.prompt.ts'
-import { LlmUnavailableError } from '../llm/llmClient.ts'
+import { isRecoverableLlmError } from '../llm/llmClient.ts'
 import { finalReportSchema, type FinalReport } from './reportSchema.ts'
 import type { CaseState } from '../case/CaseState.ts'
 
@@ -37,7 +37,7 @@ export const reportGenerateTool = defineTool({
         trace: { traceLogger: ctx.traceLogger, caseId: ctx.caseId, node: 'report.generate' },
       })
     } catch (error) {
-      if (!(error instanceof LlmUnavailableError)) throw error
+      if (!isRecoverableLlmError(error)) throw error
       ctx.traceLogger.log(ctx.caseId, 'llm_fallback', { reason: 'report.generate 使用模板降级' })
       ctx.markFallback('report.generate: LLM 不可用，使用 CaseState 模板拼装报告')
       return buildTemplateReport(ctx.state)

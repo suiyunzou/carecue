@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { defineTool } from '../tools/Tool.ts'
 import type { CaseState, SymptomState, UserProfile } from '../case/CaseState.ts'
 import { buildUnderstandSymptomsPrompt } from '../llm/prompts/understandSymptoms.prompt.ts'
-import { LlmUnavailableError } from '../llm/llmClient.ts'
+import { isRecoverableLlmError } from '../llm/llmClient.ts'
 import {
   extractDurationText,
   extractTermsByDictionary,
@@ -66,7 +66,7 @@ export const symptomExtractTool = defineTool({
       })
       return { ...result, userOriginalText: userMessage }
     } catch (error) {
-      if (!(error instanceof LlmUnavailableError)) throw error
+      if (!isRecoverableLlmError(error)) throw error
       ctx.traceLogger.log(ctx.caseId, 'llm_fallback', {
         reason: 'symptom.extract 使用词典规则降级抽取',
       })

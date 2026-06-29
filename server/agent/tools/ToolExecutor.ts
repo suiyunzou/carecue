@@ -4,6 +4,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { CaseState } from '../case/CaseState.ts'
+import { mergeCaseState } from '../case/caseStateMerger.ts'
 import type { ToolResultMessage } from '../messages/AgentMessage.ts'
 import type { TraceLogger } from '../logs/traceLogger.ts'
 import type { AgentFailureCode } from '../failureRecovery.ts'
@@ -99,6 +100,7 @@ export class ToolExecutor {
       }
 
       const statePatch = tool.toStatePatch(parsedOutput.data, ctx.state)
+      const { state: stateAfter } = mergeCaseState(ctx.state, statePatch, 'tool')
 
       const message: ToolResultMessage = {
         toolUseId: randomUUID(),
@@ -110,12 +112,17 @@ export class ToolExecutor {
       }
 
       const trace = tool.toTrace(parsedOutput.data)
+      const finalOutput = trace === parsedOutput.data 
+        ? structuredClone(parsedOutput.data) 
+        : structuredClone({ ...trace, fullOutput: parsedOutput.data })
+
       this.traceLogger.logToolResult(ctx.caseId, {
         toolName,
-        input: parsedInput.data,
-        output: { ...trace, fullOutput: parsedOutput.data },
-        statePatch,
-        stateBefore,
+        input: structuredClone(parsedInput.data),
+        output: finalOutput,
+        statePatch: structuredClone(statePatch),
+        stateBefore: structuredClone(stateBefore),
+        stateAfter: structuredClone(stateAfter),
         durationMs,
         status: fallbackReason ? 'fallback' : 'success',
         fallback: Boolean(fallbackReason),

@@ -225,7 +225,15 @@ app.post('/api/agent/consult', requireAuth, async (req: AuthedRequest, res) => {
 
     return res.json({ response, record })
   } catch (error) {
-    console.error('[Agent] consult failed', error)
+    const err = error instanceof Error ? error : new Error(String(error))
+    console.error('[Agent] consult failed', {
+      message: err.message,
+      name: err.name,
+      stack: err.stack,
+      caseId: parsed.data.caseId,
+      userId: req.userId,
+      userMessagePreview: parsed.data.message.slice(0, 100),
+    })
     return res.status(500).json({ message: '分析服务暂时不可用，请稍后重试。' })
   }
 })
@@ -277,7 +285,15 @@ app.post('/api/agent/consult/stream', requireAuth, async (req: AuthedRequest, re
 
     res.write(`data: ${JSON.stringify({ type: 'final', response, record })}\n\n`)
   } catch (error) {
-    console.error('[Agent] consult stream failed', error)
+    const err = error instanceof Error ? error : new Error(String(error))
+    console.error('[Agent] consult stream failed', {
+      message: err.message,
+      name: err.name,
+      stack: err.stack,
+      caseId: parsed.data.caseId,
+      userId: req.userId,
+      userMessagePreview: parsed.data.message.slice(0, 100),
+    })
     send({ type: 'error', message: '分析服务暂时不可用，请稍后重试。' })
   } finally {
     res.end()

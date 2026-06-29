@@ -9,7 +9,7 @@ import { MessageService } from './messages/messageService.ts'
 import { ToolRegistry } from './tools/ToolRegistry.ts'
 import { ToolExecutor } from './tools/ToolExecutor.ts'
 import { SearchPipeline } from './search/searchPipeline.ts'
-import { createOpenRouterLlmClient, type LlmClient } from './llm/llmClient.ts'
+import { createCareCueLlmClient, type LlmClient } from './llm/llmClient.ts'
 import { createFirecrawlSearchClient, type SearchClient } from './search/medicalSearchTool.ts'
 import { runCareCueAgent, type AgentRuntimeDeps, type RunAgentInput } from './agentLoop.ts'
 import type { AgentResponse } from './agentResponse.ts'
@@ -20,8 +20,10 @@ import { riskProbeTool } from './risk/riskProbe.ts'
 import { riskAssessTool } from './risk/riskAssessor.ts'
 import { caseAnalyzeTool } from './analysis/caseAnalyzer.ts'
 import { carePlanGenerateTool } from './analysis/carePlanGenerator.ts'
-import { riskProbeQuestionTool, followupQuestionTool } from './question/followupGenerator.ts'
+import { riskProbeQuestionTool, followupQuestionTool, hypothesisQuestionTool } from './question/followupGenerator.ts'
 import { reportGenerateTool } from './report/reportGenerator.ts'
+import { initialHypothesisTool } from './hypothesis/hypothesisGenerator.ts'
+import { hypothesisRefineTool } from './hypothesis/hypothesisRefiner.ts'
 
 export type { AgentResponse } from './agentResponse.ts'
 export type { CaseState } from './case/CaseState.ts'
@@ -46,7 +48,7 @@ export interface CreateRuntimeOptions {
 
 export function createCareCueAgentRuntime(options: CreateRuntimeOptions = {}): CareCueAgentRuntime {
   const traceLogger = options.traceLogger ?? new TraceLogger()
-  const llm = options.llm ?? createOpenRouterLlmClient()
+  const llm = options.llm ?? createCareCueLlmClient()
   const search = options.search ?? createFirecrawlSearchClient()
 
   const caseStateService = new CaseStateService(options.caseStore ?? new InMemoryCaseStore(), traceLogger)
@@ -62,6 +64,9 @@ export function createCareCueAgentRuntime(options: CreateRuntimeOptions = {}): C
   registry.register(riskProbeQuestionTool)
   registry.register(followupQuestionTool)
   registry.register(reportGenerateTool)
+  registry.register(initialHypothesisTool)
+  registry.register(hypothesisRefineTool)
+  registry.register(hypothesisQuestionTool)
 
   const toolExecutor = new ToolExecutor(registry, traceLogger)
   const searchPipeline = new SearchPipeline(search, llm, traceLogger)

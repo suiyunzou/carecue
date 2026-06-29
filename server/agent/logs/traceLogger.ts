@@ -33,6 +33,7 @@ export type LegacyTraceEventType =
   | 'failure_recovery'
   | 'final_output'
   | 'llm_fallback'
+  | 'llm_request'
 
 export type TraceEventType =
   | 'user_input'
@@ -158,6 +159,7 @@ const LEGACY_TO_NEW: Record<LegacyTraceEventType, TraceEventType> = {
   emergency_guard: 'tool_result',
   failure_recovery: 'failure_recovery',
   final_output: 'final_output',
+  llm_request: 'model_request',
   llm_fallback: 'model_response',
 }
 
@@ -177,7 +179,7 @@ export function traceLogDir(): string {
 }
 
 export function traceIncludeModelPayload(): boolean {
-  return process.env.TRACE_INCLUDE_MODEL_PAYLOAD !== 'false'
+  return true
 }
 
 export function traceIncludeState(): boolean {
@@ -188,16 +190,15 @@ export function traceIncludeState(): boolean {
 // 脱敏
 // ---------------------------------------------------------------------------
 const SENSITIVE_KEY_PATTERN =
-  /^(authorization|cookie|set-cookie|api[-_]?key|access[-_]?token|refresh[-_]?token|password|secret)$/i
+  /^(authorization|cookie|set-cookie|api[-_]?key|access[-_]?token|refresh[-_]?token|password|secret|phone|email|idCard|address)$/i
 
 const PHONE_PATTERN = /\b1[3-9]\d{9}\b/g
 const EMAIL_PATTERN = /\b[\w.+-]+@[\w-]+\.[\w.-]+\b/g
 const ID_CARD_PATTERN = /\b\d{17}[\dXx]\b/g
-const ADDRESS_PATTERN = /([一-龥]{2,}(省|市|区|县|街道|路|巷|号))[一-龥\d]{0,20}/g
 
-/** 单遍替换：避免链式 .replace 时，前一步生成的掩码文案本身又被后续规则二次匹配（如掩码文案含“号”被地址规则再次命中） */
+/** 单遍替换：避免链式 .replace 时，前一步生成的掩码文案本身又被后续规则二次匹配 */
 const COMBINED_PATTERN = new RegExp(
-  [PHONE_PATTERN, ID_CARD_PATTERN, EMAIL_PATTERN, ADDRESS_PATTERN].map((re) => `(?:${re.source})`).join('|'),
+  [PHONE_PATTERN, ID_CARD_PATTERN, EMAIL_PATTERN].map((re) => `(?:${re.source})`).join('|'),
   'g',
 )
 
@@ -205,21 +206,21 @@ function maskString(value: string): string {
   return value.replace(COMBINED_PATTERN, (match) => {
     if (/^1[3-9]\d{9}$/.test(match)) return '[手机号已脱敏]'
     if (/^\d{17}[\dXx]$/.test(match)) return '[身份证号已脱敏]'
-    if (/^[\w.+-]+@[\w-]+\.[\w.-]+$/.test(match)) return '[邮箱已脱敏]'
-    return '[精确地址已脱敏]'
+    return '[邮箱已脱敏]'
   })
 }
 
-/** 写日志前统一脱敏：移除敏感 header/凭证字段，掩码手机号/邮箱/身份证号/精确地址 */
-export function sanitizeTraceData(value: unknown, seen = new WeakSet<object>()): unknown {
+/** 写日志前统一脱敏：移除敏感 header/凭证字段，掩码手机号/邮箱/身份证号 */
+export function sanitizeTraceData(value: unknown, seen: object[] = []): unknown {
   if (value == null) return value
   if (typeof value === 'string') return maskString(value)
   if (typeof value !== 'object') return value
-  if (seen.has(value as object)) return '[circular]'
-  seen.add(value as object)
+  if (seen.includes(value as object)) return '[circular]'
+  
+  const newSeen = [...seen, value as object]
 
   if (Array.isArray(value)) {
-    return value.map((item) => sanitizeTraceData(item, seen))
+    return value.map((item) => sanitizeTraceData(item, newSeen))
   }
 
   const result: Record<string, unknown> = {}
@@ -228,7 +229,7 @@ export function sanitizeTraceData(value: unknown, seen = new WeakSet<object>()):
       result[key] = '[已脱敏]'
       continue
     }
-    result[key] = sanitizeTraceData(val, seen)
+    result[key] = sanitizeTraceData(val, newSeen)
   }
   return result
 }
@@ -421,8 +422,8 @@ export class TraceLogger {
     })
   }
 
-  /** 记录一次模型调用的完整请求/响应（model_request + model_response 一对事件） */
-  logModelCall(caseId: string, payload: {
+  /** 记录一次模型调用的请求（API 发起前） */
+  logModelRequest(caseId: string, payload: {
     node: string
     request: {
       provider: string
@@ -432,15 +433,35 @@ export class TraceLogger {
       maxTokens?: number
       messages: unknown
       responseSchema?: string
+      responseFormatMode?: string
+      maxDurationMs?: number
     }
+  }) {
+    this.log(caseId, 'llm_request', {
+      node: payload.node,
+      status: 'success',
+      input: { kind: 'model_request', ...payload.request },
+      metadata: { kind: 'model' },
+    })
+  }
+
+  /** 记录一次模型调用的响应（API 返回或报错后） */
+  logModelResponse(caseId: string, payload: {
+    node: string
     response?: {
+      provider?: string
+      model?: string
+      baseURL?: string
       httpStatus?: number
+      responseFormatMode?: string
       responseRaw?: unknown
       responseParsed?: unknown
       usage?: unknown
       finishReason?: string
       retries?: number
+      attempts?: unknown
       timeoutMs?: number
+      maxDurationMs?: number
       durationMs?: number
     }
     status: TraceStatus
@@ -450,7 +471,6 @@ export class TraceLogger {
     this.log(caseId, 'llm_fallback', {
       node: payload.node,
       status: payload.status,
-      input: { kind: 'model_request', ...payload.request },
       output: { kind: 'model_response', ...payload.response },
       durationMs: payload.response?.durationMs,
       fallback: payload.status === 'fallback',
