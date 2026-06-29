@@ -1,0 +1,9 @@
+# 排查状态 → 就医建议。
+- when: all_ruled_out
+  urgency: 择期就诊
+  department: 全科医学科 / 心血管内科
+  advice: 目前未发现需要立即处理的危险信号。若症状持续超过 3 天、反复发作或逐渐加重，建议到全科或心内科门诊进一步评估。
+- when: red_flag_positive
+  urgency: 立即就医
+  department: 急诊科
+  advice: 出现上述危险信号，请立即停止活动并拨打 120，或尽快前往最近医院急诊，不要自行驾车。
