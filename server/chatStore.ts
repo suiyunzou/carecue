@@ -85,6 +85,13 @@ function responsePayload(response: AgentResponse, events: AgentStreamEvent[]): P
     base.doctorSummary = response.doctorSummary
     base.triggeredCombination = response.triggeredCombination
   }
+  if (response.type === 'final_report') {
+    base.report = response.report
+  }
+  if (response.type === 'stage_report') {
+    base.nextStepHints = response.nextStepHints
+    base.failureCode = response.failureCode
+  }
   return toJson(base)
 }
 

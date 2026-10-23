@@ -292,7 +292,7 @@ user_input → ... → hypothesis.initial_generate(success: 2 refined hypotheses
 
 ```bash
 # 运行全部 agent 测试
-cd D:/trae-project/CareCue
+cd .
 npm run test:agent
 
 # 结果:
@@ -308,7 +308,7 @@ npm run typecheck:api
 
 ```bash
 # 完整多轮交互日志
-D:/trae-project/CareCue/interaction.log.txt  (252 行)
+./interaction.log.txt  (252 行)
 ```
 
 ---

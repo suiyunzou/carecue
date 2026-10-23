@@ -9,6 +9,10 @@ import { buildAnalyzeCasePrompt } from '../llm/prompts/analyzeCase.prompt.ts'
 import { isRecoverableLlmError } from '../llm/llmClient.ts'
 import { caseAnalyzeOutputSchema, type CaseAnalyzeOutput } from './hypothesisSchema.ts'
 import { getDomainConfig } from '../symptoms/symptomDomainConfig.ts'
+import { SYMPTOM_DOMAIN_USER_LABELS } from '../risk/riskPresentation.ts'
+
+const CASE_ANALYZE_LLM_BUDGET_MS = Number(process.env.AGENT_CASE_ANALYZE_LLM_BUDGET_MS ?? 22000)
+const CASE_ANALYZE_TOOL_TIMEOUT_MS = Number(process.env.AGENT_CASE_ANALYZE_TOOL_TIMEOUT_MS ?? 40000)
 
 export const caseAnalyzeTool = defineTool({
   name: 'case.analyze',
@@ -16,7 +20,7 @@ export const caseAnalyzeTool = defineTool({
   inputSchema: z.object({}),
   outputSchema: caseAnalyzeOutputSchema,
   guardLevel: 'medical_reasoning',
-  timeoutMs: 40000,
+  timeoutMs: CASE_ANALYZE_TOOL_TIMEOUT_MS,
 
   guard(_input, state) {
     const emergency = blockWhenEmergency(state)
@@ -33,6 +37,7 @@ export const caseAnalyzeTool = defineTool({
         system: prompt.system,
         user: prompt.user,
         temperature: 0.2,
+        maxDurationMs: CASE_ANALYZE_LLM_BUDGET_MS,
         trace: { traceLogger: ctx.traceLogger, caseId: ctx.caseId, node: 'case.analyze' },
       })
       return sanitizeAnalysis(result, ctx.state)
@@ -87,21 +92,22 @@ function sanitizeAnalysis(output: CaseAnalyzeOutput, state: CaseState): CaseAnal
 function fallbackAnalysis(state: CaseState): CaseAnalyzeOutput {
   const config = getDomainConfig(state.symptomDomain.primaryDomain)
   const seeds = config?.commonHypothesisSeeds.slice(0, 3) ?? ['需线下评估的不适方向']
+  const domainLabel = SYMPTOM_DOMAIN_USER_LABELS[state.symptomDomain.primaryDomain] ?? '当前症状'
 
   return {
     hypotheses: seeds.map((name, index) => ({
       name,
       likelihood: index === 0 ? 'possible' : 'less_likely',
-      supportEvidence: [`症状域 ${state.symptomDomain.primaryDomain} 的常见方向之一`],
+      supportEvidence: [`${domainLabel}的常见方向之一`],
       againstEvidence: [],
-      missingInfo: ['AI 分析暂不可用，本方向仅为该症状域常见参考，不构成判断。'],
+      missingInfo: ['目前依据已提供信息做阶段性整理，该方向仅为同类症状的常见参考，不构成判断。'],
       riskLevel: 'medium',
       doctorCheckQuestion: `请医生评估是否为${name}。`,
       explanationForUser: `根据症状类型，${name}是该类不适的常见方向之一，需要医生进一步确认。`,
       evidenceRefs: [],
     })),
     missingInfo: [],
-    stageConclusion: 'AI 分析暂不可用，仅提供该症状域常见方向作低置信参考，建议线下确认。',
+    stageConclusion: '目前依据已提供信息做阶段性整理，仅提供同类症状常见方向作低置信参考，建议线下确认。',
     canFinalAnswer: false,
     shouldAskUser: false,
     shouldSearchMore: false,

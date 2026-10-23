@@ -10,6 +10,8 @@ import { buildDecideActionPrompt } from './llm/prompts/decideAction.prompt.ts'
 import type { TraceLogger } from './logs/traceLogger.ts'
 import { userForcedSearchActive, webSearchEnabled } from './search/searchPolicy.ts'
 
+const DECISION_LLM_BUDGET_MS = Number(process.env.AGENT_DECISION_LLM_BUDGET_MS ?? 8000)
+
 export async function decideAction(input: {
   state: CaseState
   contextSummary: string
@@ -41,6 +43,7 @@ export async function decideAction(input: {
       system: prompt.system,
       user: prompt.user,
       temperature: 0.1,
+      maxDurationMs: DECISION_LLM_BUDGET_MS,
       trace: { traceLogger, caseId: state.caseId, node: 'agent.decide_action' },
     })
   } catch (error) {

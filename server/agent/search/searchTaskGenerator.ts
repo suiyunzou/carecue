@@ -15,6 +15,8 @@ const searchTasksOutputSchema = z.object({
   tasks: z.array(medicalSearchTaskSchema),
 })
 
+const SEARCH_TASK_LLM_BUDGET_MS = Number(process.env.AGENT_SEARCH_TASK_LLM_BUDGET_MS ?? 8000)
+
 export async function generateSearchTasks(
   state: CaseState,
   decisionGoal: string,
@@ -28,6 +30,7 @@ export async function generateSearchTasks(
       schemaName: 'search_tasks',
       system: prompt.system,
       user: prompt.user,
+      maxDurationMs: SEARCH_TASK_LLM_BUDGET_MS,
       trace: traceLogger ? { traceLogger, caseId: state.caseId, node: 'search.generate_tasks' } : undefined,
     })
     return result.tasks

@@ -13,6 +13,9 @@ import {
 } from './symptomNormalizer.ts'
 import { SYMPTOM_DOMAIN_CONFIGS } from './symptomDomainConfig.ts'
 
+const SYMPTOM_EXTRACT_LLM_BUDGET_MS = Number(process.env.AGENT_SYMPTOM_EXTRACT_LLM_BUDGET_MS ?? 12000)
+const SYMPTOM_EXTRACT_TOOL_TIMEOUT_MS = Number(process.env.AGENT_SYMPTOM_EXTRACT_TOOL_TIMEOUT_MS ?? 30000)
+
 const symptomExtractInputSchema = z.object({
   userMessage: z.string().min(1),
 })
@@ -42,29 +45,66 @@ const symptomExtractOutputSchema = z.object({
 
 export type SymptomExtractOutput = z.infer<typeof symptomExtractOutputSchema>
 
+type LlmSymptomExtractOutput = Omit<SymptomExtractOutput, 'userOriginalText'>
+
+const flatLlmSymptomExtractSchema = symptomExtractOutputSchema.omit({ userOriginalText: true })
+
+const nestedLlmSymptomExtractSchema = z.object({
+  symptoms: z.record(z.string(), z.unknown()).optional(),
+  userProfile: z.record(z.string(), z.unknown()).optional(),
+  unclearFields: z.array(z.string()).optional(),
+}).transform((value): LlmSymptomExtractOutput => {
+  const symptoms = value.symptoms ?? {}
+  const profile = value.userProfile ?? {}
+
+  return {
+    chiefComplaint: firstString(symptoms.chiefComplaint, firstArrayItem(symptoms.userOriginalText)),
+    onsetTime: firstString(symptoms.onsetTime),
+    duration: firstString(symptoms.duration),
+    location: firstString(symptoms.location),
+    severity: firstString(symptoms.severity),
+    frequency: firstString(symptoms.frequency),
+    painQuality: firstString(symptoms.painQuality, symptoms.character),
+    onsetPattern: firstString(symptoms.onsetPattern),
+    triggers: uniqueStrings([...toStringArray(symptoms.triggers), ...toStringArray(symptoms.aggravatingFactors)]),
+    relievingFactors: toStringArray(symptoms.relievingFactors),
+    associatedSymptoms: toStringArray(symptoms.associatedSymptoms),
+    negativeSymptoms: toStringArray(symptoms.negativeSymptoms),
+    progression: normalizeProgression(symptoms.progression),
+    age: normalizeAge(profile.age),
+    sex: normalizeSex(firstString(profile.sex, profile.gender)),
+    pregnancy: normalizeBoolean(profile.pregnancy),
+    chronicDiseases: toStringArray(profile.chronicDiseases),
+    currentMedications: toStringArray(profile.currentMedications),
+    unclearFields: value.unclearFields ?? toStringArray(symptoms.unclearFields),
+  }
+})
+
+const llmSymptomExtractSchema = z.union([flatLlmSymptomExtractSchema, nestedLlmSymptomExtractSchema])
+
 export const symptomExtractTool = defineTool({
   name: 'symptom.extract',
   description: '从用户最新消息中抽取症状结构化信息（不诊断、不建议）。',
   inputSchema: symptomExtractInputSchema,
   outputSchema: symptomExtractOutputSchema,
   guardLevel: 'medical_reasoning',
-  timeoutMs: 30000,
+  timeoutMs: SYMPTOM_EXTRACT_TOOL_TIMEOUT_MS,
 
   async call(input, ctx) {
     const userMessage = input.userMessage
 
     try {
       const prompt = buildUnderstandSymptomsPrompt(userMessage, ctx.state)
-      const llmSchema = symptomExtractOutputSchema.omit({ userOriginalText: true })
       const result = await ctx.llm.structured({
-        schema: llmSchema,
+        schema: llmSymptomExtractSchema,
         schemaName: 'symptom_extraction',
         system: prompt.system,
         user: prompt.user,
         temperature: 0.1,
+        maxDurationMs: SYMPTOM_EXTRACT_LLM_BUDGET_MS,
         trace: { traceLogger: ctx.traceLogger, caseId: ctx.caseId, node: 'symptom.extract' },
       })
-      return { ...result, userOriginalText: userMessage }
+      return mergeWithHeuristic(result, heuristicExtract(userMessage), userMessage)
     } catch (error) {
       if (!isRecoverableLlmError(error)) throw error
       ctx.traceLogger.log(ctx.caseId, 'llm_fallback', {
@@ -129,18 +169,27 @@ function heuristicExtract(userMessage: string): SymptomExtractOutput {
   const ageMatch = text.match(/(\d{1,3})\s*岁/)
   const worsening = /越来越(重|疼|痛|严重)|不断加重|加重了/.test(text)
   const improving = /好(多了|转)|缓解了|轻多了/.test(text)
+  const location = extractLikelyLocation(text)
+  const triggers = [
+    /熬夜|通宵/.test(text) ? '熬夜' : '',
+    /不洗澡|没洗澡|未洗澡/.test(text) ? '不洗澡' : '',
+  ].filter(Boolean)
+  const relievingFactors = [
+    improving ? '休息后缓解' : '',
+    /洗澡.*(减轻|缓解|好转)|洗完澡.*(减轻|缓解|好转)/.test(text) ? '洗澡后减轻' : '',
+  ].filter(Boolean)
 
   return {
     chiefComplaint: userMessage.slice(0, 60),
     onsetTime: '',
     duration: extractDurationText(text) ?? '',
-    location: '',
+    location,
     severity: /剧烈|特别(疼|痛|严重)|受不了/.test(text) ? '重' : '',
     frequency: '',
     painQuality: /压榨|闷紧|压迫/.test(text) ? '压榨感' : /刺痛|针扎/.test(text) ? '刺痛' : '',
     onsetPattern: /突然|一下子/.test(text) ? '突然发生' : '',
-    triggers: /熬夜|通宵/.test(text) ? ['熬夜'] : [],
-    relievingFactors: improving ? ['休息后缓解'] : [],
+    triggers,
+    relievingFactors,
     associatedSymptoms: confirmed,
     negativeSymptoms: denied,
     progression: worsening ? 'worsening' : improving ? 'improving' : 'unknown',
@@ -152,4 +201,92 @@ function heuristicExtract(userMessage: string): SymptomExtractOutput {
     unclearFields: ['heuristic_extraction'],
     userOriginalText: userMessage,
   }
+}
+
+function extractLikelyLocation(text: string): string {
+  const locations = ['背部', '后背', '脸部', '脸上', '下巴', '脸颊', '额头', '胸口', '胸部', '腹部', '上腹', '下腹', '左眼', '右眼', '双眼', '喉咙', '嗓子']
+  const match = locations.find((location) => text.includes(location))
+  if (!match) return ''
+  if (match === '后背') return '背部'
+  if (match === '脸上') return '脸部'
+  return match
+}
+
+function mergeWithHeuristic(
+  llm: LlmSymptomExtractOutput,
+  heuristic: SymptomExtractOutput,
+  userMessage: string,
+): SymptomExtractOutput {
+  return {
+    ...llm,
+    chiefComplaint: llm.chiefComplaint || heuristic.chiefComplaint || userMessage,
+    onsetTime: llm.onsetTime || heuristic.onsetTime,
+    duration: llm.duration || heuristic.duration,
+    location: llm.location || heuristic.location,
+    severity: llm.severity || heuristic.severity,
+    frequency: llm.frequency || heuristic.frequency,
+    painQuality: llm.painQuality || heuristic.painQuality,
+    onsetPattern: llm.onsetPattern || heuristic.onsetPattern,
+    triggers: uniqueStrings([...llm.triggers, ...heuristic.triggers]),
+    relievingFactors: uniqueStrings([...llm.relievingFactors, ...heuristic.relievingFactors]),
+    associatedSymptoms: uniqueStrings([...llm.associatedSymptoms, ...heuristic.associatedSymptoms]),
+    negativeSymptoms: uniqueStrings([...llm.negativeSymptoms, ...heuristic.negativeSymptoms]),
+    progression: llm.progression === 'unknown' ? heuristic.progression : llm.progression,
+    age: llm.age ?? heuristic.age,
+    sex: llm.sex === 'unknown' ? heuristic.sex : llm.sex,
+    pregnancy: llm.pregnancy ?? heuristic.pregnancy,
+    chronicDiseases: uniqueStrings([...llm.chronicDiseases, ...heuristic.chronicDiseases]),
+    currentMedications: uniqueStrings([...llm.currentMedications, ...heuristic.currentMedications]),
+    unclearFields: uniqueStrings(llm.unclearFields.filter((field) => field !== 'heuristic_extraction')),
+    userOriginalText: userMessage,
+  }
+}
+
+function firstString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string') return value
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  }
+  return ''
+}
+
+function firstArrayItem(value: unknown): unknown {
+  return Array.isArray(value) ? value[0] : undefined
+}
+
+function toStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => firstString(item)).filter(Boolean)
+  }
+  const item = firstString(value)
+  return item ? [item] : []
+}
+
+function uniqueStrings(items: string[]): string[] {
+  return Array.from(new Set(items.filter(Boolean)))
+}
+
+function normalizeAge(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string') {
+    const match = value.match(/\d{1,3}/)
+    if (match) return Number(match[0])
+  }
+  return null
+}
+
+function normalizeSex(value: string): LlmSymptomExtractOutput['sex'] {
+  if (/男|male/i.test(value)) return 'male'
+  if (/女|female/i.test(value)) return 'female'
+  return 'unknown'
+}
+
+function normalizeBoolean(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null
+}
+
+function normalizeProgression(value: unknown): LlmSymptomExtractOutput['progression'] {
+  return value === 'improving' || value === 'stable' || value === 'worsening' || value === 'unknown'
+    ? value
+    : 'unknown'
 }

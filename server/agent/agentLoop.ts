@@ -603,11 +603,25 @@ const TOOL_LABELS: Record<string, string> = {
   'symptom.domain_classify': '症状域分类',
   'risk.probe': '风险探查',
   'risk.red_flag_assess': '红旗评估',
+  'hypothesis.initial_generate': '初步方向整理',
+  'hypothesis.refine': '方向更新',
   'case.analyze': '病例分析',
   'care_plan.generate': '处理建议',
   'question.generate': '生成追问',
   'question.generate_risk_probe': '危险信号追问',
   'report.generate': '生成报告',
+}
+
+const TOOL_ERROR_LABELS: Record<string, string> = {
+  TOOL_INPUT_INVALID: '输入信息格式异常，已切换为安全整理。',
+  TOOL_OUTPUT_INVALID: '分析结果格式异常，已切换为安全整理。',
+  TOOL_RUNTIME_ERROR: '暂时无法完成，已切换为安全整理。',
+  GUARD_BLOCKED: '当前信息还不足，已先做阶段性整理。',
+  MAX_STEP_REACHED: '分析步骤较多，已先做阶段性整理。',
+  SEARCH_NO_RESULT: '未检索到可用资料，已按现有信息整理。',
+  SEARCH_ALL_REJECTED: '未获取到可用权威资料，已按现有信息整理。',
+  FINAL_GUARD_FAILED: '完整报告需要更多确认，已先做阶段性整理。',
+  CARE_PLAN_GUARD_FAILED: '日常建议需要更多确认，已先做阶段性整理。',
 }
 
 function summarizeToolStep(
@@ -617,7 +631,7 @@ function summarizeToolStep(
   const label = TOOL_LABELS[toolName] ?? toolName
   if (result.status === 'error') {
     const code = result.message?.error?.code ?? '失败'
-    return `${label}：${code}`
+    return `${label}：${TOOL_ERROR_LABELS[code] ?? '暂时无法完成，已切换为安全整理。'}`
   }
   if (toolName === 'case.analyze' && result.output && typeof result.output === 'object' && 'hypotheses' in result.output) {
     const hypos = (result.output as CaseAnalyzeOutput).hypotheses

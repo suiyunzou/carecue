@@ -31,7 +31,7 @@ export const hypothesisRefineTool = defineTool({
         maxDurationMs: HYPOTHESIS_LLM_BUDGET_MS,
         trace: { traceLogger: ctx.traceLogger, caseId: ctx.caseId, node: 'hypothesis.refine' },
       })
-      return sanitizeRefinedHypotheses(result, ctx.state)
+      return sanitizeRefinedHypotheses(result)
     } catch (error) {
       if (!isRecoverableLlmError(error)) throw error
       ctx.traceLogger.log(ctx.caseId, 'llm_fallback', { reason: 'hypothesis.refine 无法使用，保留现有假设' })
@@ -63,7 +63,7 @@ export const hypothesisRefineTool = defineTool({
 })
 
 /** 代码侧约束：最多 3 个主要方向 + must_rule_out */
-function sanitizeRefinedHypotheses(output: CaseAnalyzeOutput, _state: CaseState): CaseAnalyzeOutput {
+function sanitizeRefinedHypotheses(output: CaseAnalyzeOutput): CaseAnalyzeOutput {
   const mustRuleOut = output.hypotheses.filter((h) => h.likelihood === 'must_rule_out')
   const others = output.hypotheses.filter((h) => h.likelihood !== 'must_rule_out').slice(0, 3)
   return { ...output, hypotheses: [...others, ...mustRuleOut] }

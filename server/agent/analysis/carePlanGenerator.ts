@@ -8,6 +8,9 @@ import { requireHypothesesAndEvidence } from '../tools/ToolGuards.ts'
 import { buildGenerateCarePlanPrompt } from '../llm/prompts/generateCarePlan.prompt.ts'
 import { isRecoverableLlmError } from '../llm/llmClient.ts'
 
+const CARE_PLAN_LLM_BUDGET_MS = Number(process.env.AGENT_CARE_PLAN_LLM_BUDGET_MS ?? 22000)
+const CARE_PLAN_TOOL_TIMEOUT_MS = Number(process.env.AGENT_CARE_PLAN_TOOL_TIMEOUT_MS ?? 40000)
+
 export const carePlanOutputSchema = z.object({
   selfCareAdvice: z.array(z.string()).min(1),
   lifestyleAdvice: z.array(z.string()),
@@ -32,7 +35,7 @@ export const carePlanGenerateTool = defineTool({
   inputSchema: z.object({}),
   outputSchema: carePlanOutputSchema,
   guardLevel: 'medical_output',
-  timeoutMs: 40000,
+  timeoutMs: CARE_PLAN_TOOL_TIMEOUT_MS,
 
   guard(_input, state) {
     return requireHypothesesAndEvidence(state)
@@ -47,6 +50,7 @@ export const carePlanGenerateTool = defineTool({
         system: prompt.system,
         user: prompt.user,
         temperature: 0.2,
+        maxDurationMs: CARE_PLAN_LLM_BUDGET_MS,
         trace: { traceLogger: ctx.traceLogger, caseId: ctx.caseId, node: 'care_plan.generate' },
       })
     } catch (error) {

@@ -38,6 +38,8 @@ export type LlmStructuredOptions<T> = {
   system: string
   user: string
   temperature?: number
+  /** 可选：限制模型输出 token，避免兼容供应商把未设置值解释为超大输出预算。 */
+  maxTokens?: number
   /** 可选：限制本次结构化调用的总耗时，耗尽后抛 LlmUnavailableError 让工具走降级。 */
   maxDurationMs?: number
   /** 可选：把这次调用的完整请求/响应写入 Trace（model_request/model_response） */
@@ -89,6 +91,7 @@ function logLlm(line: string) {
 
 export function createCareCueLlmClient(): LlmClient {
   const timeoutMs = Number(process.env.AI_TIMEOUT_MS ?? 20000)
+  const maxTokens = positiveNumber(process.env.AI_MAX_TOKENS, 2048)
   const primaryProvider = (process.env.LLM_PRIMARY_PROVIDER?.trim() || 'deepseek').toLowerCase()
 
   const deepseekBaseURL = process.env.DEEPSEEK_BASE_URL?.trim() || 'https://api.deepseek.com'
@@ -179,6 +182,7 @@ export function createCareCueLlmClient(): LlmClient {
         model: config.model,
         baseURL: config.baseURL,
         temperature: options.temperature ?? 0.1,
+        maxTokens: options.maxTokens ?? maxTokens,
         messages: buildMessages(options, config.responseFormatMode),
         responseSchema: options.schemaName,
         responseFormatMode: config.responseFormatMode,
@@ -270,12 +274,6 @@ export function createCareCueLlmClient(): LlmClient {
           return attempt.data as T
         }
 
-        if (config.provider === 'deepseek' && isStructuredOutputError(attempt.error)) {
-          logLlm(`${options.schemaName} ✗ ${config.provider}:${config.model} ${Date.now() - startedAt}ms ${attempt.error.message}`)
-          emitResponseTrace(options, attempts, 'failed', 'DeepSeek 返回内容不是合法结构化输出，进入工具降级')
-          throw toThrowable(attempt.error)
-        }
-
         const formatError = isResponseFormatError(attempt.error.message)
         if (config.jsonSchemaMemoKey === 'openrouter' && formatError && !openRouterJsonSchemaDisabled) {
           openRouterJsonSchemaDisabled = true
@@ -328,19 +326,23 @@ async function completeOnce<T>(
   timeoutMs: number,
 ): Promise<Attempt<T>> {
   const startedAt = Date.now()
+  const maxTokens = options.maxTokens ?? positiveNumber(process.env.AI_MAX_TOKENS, 2048)
   let completion: OpenAI.Chat.Completions.ChatCompletion
+  const controller = new AbortController()
   try {
     completion = await withLocalTimeout(
       config.client.chat.completions.create({
         model: config.model,
         messages: buildMessages(options, config.responseFormatMode),
         temperature: options.temperature ?? 0.1,
+        max_tokens: options.maxTokens ?? maxTokens,
         response_format:
           config.responseFormatMode === 'json_schema'
             ? zodResponseFormat(options.schema, options.schemaName)
             : { type: 'json_object' },
-      }),
+      }, { signal: controller.signal }),
       timeoutMs,
+      () => controller.abort(),
     )
   } catch (error) {
     const err = error as { status?: number; message?: string; error?: unknown; name?: string }
@@ -452,10 +454,6 @@ function isResponseFormatError(message: string): boolean {
   return /response_format|json_schema|structured/i.test(message)
 }
 
-function isStructuredOutputError(error: Pick<AttemptError, 'name'>): boolean {
-  return error.name === 'SchemaValidationError' || error.name === 'JSONParseError' || error.name === 'LlmOutputInvalidError'
-}
-
 function isTransientLlmUnavailableError(error: Pick<AttemptError, 'name' | 'message' | 'statusCode'>): boolean {
   const message = `${error.name ?? ''} ${error.message}`.toLowerCase()
   if (/timeout|timed out|etimedout|econnreset|econnrefused|enotfound|fetch failed|network|socket hang up/.test(message)) {
@@ -474,10 +472,18 @@ function attemptTimeoutMs(timeoutMs: number, startedAt: number, maxDurationMs: n
   return Math.max(1, Math.min(timeoutMs, remainingMs))
 }
 
-async function withLocalTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+function positiveNumber(value: string | undefined, fallback: number): number {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+async function withLocalTimeout<T>(promise: Promise<T>, timeoutMs: number, onTimeout?: () => void): Promise<T> {
   let timer: NodeJS.Timeout | undefined
   const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new LlmUnavailableError(`LLM request timeout after ${timeoutMs}ms`)), timeoutMs)
+    timer = setTimeout(() => {
+      onTimeout?.()
+      reject(new LlmUnavailableError(`LLM request timeout after ${timeoutMs}ms`))
+    }, timeoutMs)
   })
   try {
     return await Promise.race([promise, timeout])

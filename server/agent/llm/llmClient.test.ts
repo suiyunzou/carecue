@@ -103,6 +103,7 @@ async function testDeepSeekPreferred() {
   assert.equal(calls.length, 1)
   assert.match(calls[0].url, /api\.deepseek\.com/)
   assert.equal(calls[0].body.model, 'deepseek-v4-flash')
+  assert.equal(calls[0].body.max_tokens, 2048)
   assert.deepEqual(calls[0].body.response_format, { type: 'json_object' })
 }
 
@@ -122,12 +123,12 @@ async function testDeepSeekTransientFallsBackToOpenRouter() {
   assert.equal(calls.length, 2)
   assert.match(calls[0].url, /api\.deepseek\.com/)
   assert.match(calls[1].url, /openrouter\.ai/)
+  assert.equal(calls[1].body.max_tokens, 2048)
 }
 
 async function testInvalidDeepSeekJsonThrowsOutputInvalid() {
   resetEnv()
   process.env.DEEPSEEK_API_KEY = 'sk-deepseek'
-  process.env.OPENROUTER_API_KEY = 'sk-openrouter'
   const calls = installMockFetch([{ content: 'not-json' }])
 
   await assert.rejects(
@@ -136,6 +137,26 @@ async function testInvalidDeepSeekJsonThrowsOutputInvalid() {
   )
   assert.equal(calls.length, 1)
   assert.match(calls[0].url, /api\.deepseek\.com/)
+}
+
+async function testInvalidDeepSeekJsonFallsBackToOpenRouter() {
+  resetEnv()
+  process.env.DEEPSEEK_API_KEY = 'sk-deepseek'
+  process.env.OPENROUTER_API_KEY = 'sk-openrouter'
+  process.env.OPENROUTER_MODEL = 'deepseek/deepseek-v4-pro'
+  const calls = installMockFetch([
+    { content: 'not-json' },
+    { content: '{"value":"openrouter-schema"}' },
+  ])
+
+  const result = await createCareCueLlmClient().structured(options())
+
+  assert.equal(result.value, 'openrouter-schema')
+  assert.equal(calls.length, 2)
+  assert.match(calls[0].url, /api\.deepseek\.com/)
+  assert.match(calls[1].url, /openrouter\.ai/)
+  assert.equal((calls[1].body.response_format as { type?: string }).type, 'json_schema')
+  assert.equal(calls[1].body.max_tokens, 2048)
 }
 
 async function testOpenRouterSchemaFallsBackToJsonObject() {
@@ -194,6 +215,7 @@ const tests = [
   testDeepSeekPreferred,
   testDeepSeekTransientFallsBackToOpenRouter,
   testInvalidDeepSeekJsonThrowsOutputInvalid,
+  testInvalidDeepSeekJsonFallsBackToOpenRouter,
   testOpenRouterSchemaFallsBackToJsonObject,
   testTraceCapturesFullModelPayload,
   testOverallBudgetExhaustionIsRecoverable,

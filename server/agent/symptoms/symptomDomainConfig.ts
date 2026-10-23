@@ -94,7 +94,7 @@ const eyeDiscomfortDomain: SymptomDomainConfig = {
 
 const skinMildDomain: SymptomDomainConfig = {
   domain: 'skin_mild',
-  triggerTerms: ['长痘', '痘痘', '痤疮', '皮疹', '湿疹', '荨麻疹', '红疹', '过敏', '皮肤痒', '起疹子', '粉刺', '毛囊炎', '脱皮'],
+  triggerTerms: ['长痘', '痘痘', '豆豆', '爆豆', '痤疮', '皮疹', '湿疹', '荨麻疹', '红疹', '过敏', '皮肤痒', '起疹子', '粉刺', '毛囊炎', '脱皮'],
   requiredCoreFields: ['duration', 'location', 'associatedSymptoms'],
   riskProbeQuestions: [
     q('皮肤问题出现多久了？范围有没有快速扩大？', '快速扩散提示更高风险，需要先确认。', 'symptoms.duration'),

@@ -51,6 +51,38 @@ type AgentCitation = {
   credibility: string
 }
 
+type ReportLikelihood = 'more_likely' | 'possible' | 'less_likely' | 'must_rule_out'
+
+type ReportHypothesis = {
+  name: string
+  likelihood: ReportLikelihood
+  supportEvidence: string[]
+  againstEvidence: string[]
+  uncertainties: string[]
+}
+
+type FinalReport = {
+  currentConclusion: string
+  riskLevel: AgentRiskLevel
+  riskReason: string
+  deniedRedFlags: string[]
+  unresolvedRedFlags: string[]
+  hypotheses: ReportHypothesis[]
+  selfCareAdvice: string[]
+  otcIngredientOptions: Array<{
+    ingredientCategory: string
+    suitableFor: string
+    caution: string
+  }>
+  avoidActions: string[]
+  seekCareWhen: string[]
+  departmentSuggestion: string
+  questionsForDoctor: string[]
+  doctorSummary: string
+  uncertaintyNote: string
+  references: Array<{ title: string; url: string }>
+}
+
 type AgentSnapshot = {
   chiefComplaint: string
   primaryDomain: string
@@ -73,7 +105,7 @@ type AgentResponse = {
 } & (
   | { type: 'followup'; mode: 'risk_probe' | 'differential' | 'care_plan'; intro: string; questions: AgentFollowupQuestion[] }
   | { type: 'emergency'; content: string; triggeredCombination: string[]; doctorSummary: string }
-  | { type: 'final_report'; rendered: string }
+  | { type: 'final_report'; report: FinalReport; rendered: string }
   | { type: 'stage_report'; content: string; reason: string; nextStepHints: string[] }
 )
 
@@ -100,6 +132,8 @@ type ChatMessage = {
   kind?: 'followup' | 'emergency' | 'final_report' | 'stage_report'
   followupMode?: AgentFollowupQuestion['type']
   questions?: AgentFollowupQuestion[]
+  report?: FinalReport
+  nextStepHints?: string[]
   /** 本条回复的可审计分析过程（可折叠展示） */
   process?: string[]
   /** 本条回复引用的权威来源 */
@@ -132,6 +166,9 @@ type ChatMessageRow = {
     mode?: AgentFollowupQuestion['type']
     questions?: AgentFollowupQuestion[]
     doctorSummary?: string
+    report?: FinalReport
+    nextStepHints?: string[]
+    failureCode?: string
     citations?: AgentCitation[]
     events?: AgentStreamEvent[]
   } | null
@@ -205,7 +242,6 @@ function App() {
         setUser(null)
         setAuthStatus('anonymous')
       })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const startExperience = () => {
@@ -476,7 +512,7 @@ function App() {
             </div>
             <label>
               手机号或邮箱
-              <input value={account} onChange={(event) => setAccount(event.target.value)} placeholder="13800000000 / name@example.com" />
+              <input value={account} onChange={(event) => setAccount(event.target.value)} placeholder="请输入手机号或邮箱" />
             </label>
             {authMode === 'register' ? (
               <label>
@@ -697,6 +733,42 @@ const LIKELIHOOD_LABELS: Record<string, string> = {
   must_rule_out: '需优先排除',
 }
 
+const USER_FIELD_LABELS: Record<string, string> = {
+  'symptoms.chiefComplaint': '主要不适',
+  'symptoms.onsetTime': '出现时间',
+  'symptoms.duration': '持续时间',
+  'symptoms.location': '具体部位',
+  'symptoms.severity': '不适程度',
+  'symptoms.frequency': '发作频率',
+  'symptoms.painQuality': '疼痛性质',
+  'symptoms.onsetPattern': '发作方式',
+  'symptoms.triggers': '诱因',
+  'symptoms.relievingFactors': '缓解方式',
+  'symptoms.associatedSymptoms': '伴随症状',
+  'symptoms.negativeSymptoms': '已排除的症状',
+  'symptoms.progression': '变化趋势',
+  'userProfile.age': '年龄',
+  'userProfile.sex': '性别',
+  'userProfile.pregnancy': '是否怀孕',
+  'userProfile.chronicDiseases': '既往慢性病',
+  'userProfile.currentMedications': '当前用药',
+  'userProfile.allergies': '过敏史',
+}
+
+const FAILURE_CODE_LABELS: Record<string, string> = {
+  INVALID_ACTION: '系统暂时无法完成完整分析，已先做阶段性整理。',
+  TOOL_INPUT_INVALID: '系统暂时无法完成完整分析，已先做阶段性整理。',
+  TOOL_OUTPUT_INVALID: '系统暂时无法完成完整分析，已先做阶段性整理。',
+  TOOL_RUNTIME_ERROR: '系统暂时无法完成完整分析，已先做阶段性整理。',
+  GUARD_BLOCKED: '当前信息还不足，已先做阶段性整理。',
+  MAX_STEP_REACHED: '当前信息较多，已先做阶段性整理。',
+  SEARCH_NO_RESULT: '本次未获取到可用权威资料，已根据现有信息整理。',
+  SEARCH_ALL_REJECTED: '本次未获取到可用权威资料，已根据现有信息整理。',
+  EVIDENCE_CONFLICT: '资料之间存在不一致，建议以线下医生判断为准。',
+  CARE_PLAN_GUARD_FAILED: '日常建议需要进一步确认，已先做阶段性整理。',
+  FINAL_GUARD_FAILED: '完整报告需要更多信息确认，已先做阶段性整理。',
+}
+
 const MESSAGE_KIND_TITLES: Record<NonNullable<ChatMessage['kind']>, string> = {
   followup: '问康 · 补充信息',
   emergency: '急症提醒',
@@ -707,6 +779,39 @@ const MESSAGE_KIND_TITLES: Record<NonNullable<ChatMessage['kind']>, string> = {
 function formatDomainLabel(domain?: string) {
   if (!domain) return '症状咨询'
   return DOMAIN_LABELS[domain] ?? '症状咨询'
+}
+
+function replaceExactCodes(text: string, labels: Record<string, string>) {
+  return Object.entries(labels).reduce(
+    (value, [code, label]) => value.replace(new RegExp(`\\b${code}\\b`, 'g'), label),
+    text,
+  )
+}
+
+function sanitizeUserVisibleText(text: string) {
+  let output = text
+  for (const [code, label] of Object.entries(USER_FIELD_LABELS)) {
+    output = output.replaceAll(code, label)
+  }
+  output = replaceExactCodes(output, DOMAIN_LABELS)
+  output = replaceExactCodes(output, LIKELIHOOD_LABELS)
+  output = replaceExactCodes(output, FAILURE_CODE_LABELS)
+  output = output
+    .replace(/[（(]\s*R0\s*[）)]/g, '（暂未发现明显危险信号）')
+    .replace(/[（(]\s*R1\s*[）)]/g, '（低风险）')
+    .replace(/[（(]\s*R2\s*[）)]/g, '（需尽快就医评估）')
+    .replace(/[（(]\s*R3\s*[）)]/g, '（急症风险）')
+    .replace(/R0(?![0-9A-Za-z])/g, '暂未发现明显危险信号')
+    .replace(/R1(?![0-9A-Za-z])/g, '低风险')
+    .replace(/R2(?![0-9A-Za-z])/g, '需尽快就医评估')
+    .replace(/R3(?![0-9A-Za-z])/g, '急症风险')
+    .replace(/AI 分析暂不可用/g, '目前依据已提供信息做阶段性整理')
+    .replace(/本方向仅为该症状域常见参考/g, '该方向仅为同类症状的常见参考')
+  return output
+}
+
+function cleanTextList(items: string[] = []) {
+  return items.map((item) => sanitizeUserVisibleText(item)).filter(Boolean)
 }
 
 function assistantMessageTitle(message: ChatMessage) {
@@ -788,6 +893,227 @@ function CitationFootnotes({ citations }: { citations: AgentCitation[] }) {
   )
 }
 
+function riskTone(level?: AgentRiskLevel) {
+  if (level === 'R3') return 'critical'
+  if (level === 'R2') return 'warning'
+  if (level === 'R1') return 'watch'
+  return 'calm'
+}
+
+function EvidenceList({ title, items }: { title: string; items: string[] }) {
+  const cleaned = cleanTextList(items)
+  if (!cleaned.length) return null
+  return (
+    <div className="evidence-list">
+      <span>{title}</span>
+      <ul>
+        {cleaned.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function ReportMessageCard({ report, riskLevel }: { report: FinalReport; riskLevel: AgentRiskLevel }) {
+  const tone = riskTone(riskLevel)
+  const likely = report.hypotheses.filter((h) => h.likelihood !== 'must_rule_out')
+  const mustRuleOut = report.hypotheses.filter((h) => h.likelihood === 'must_rule_out')
+  const unresolvedCount = report.unresolvedRedFlags.length
+
+  return (
+    <div className="structured-report">
+      <section className={`report-hero tone-${tone}`}>
+        <div>
+          <span className="report-kicker">阶段性结论</span>
+          <p>{sanitizeUserVisibleText(report.currentConclusion)}</p>
+        </div>
+        <div className="report-status-stack">
+          <span className={`risk-pill tone-${tone}`}>{RISK_LABELS[riskLevel]}</span>
+          <span className="uncertainty-pill">{unresolvedCount ? `${unresolvedCount} 项仍需确认` : '暂无明确待确认危险信号'}</span>
+        </div>
+      </section>
+
+      <section className="report-section report-section-emphasis">
+        <div className="report-section-title">
+          <ListChecks size={18} />
+          <h4>你现在可以先做什么</h4>
+        </div>
+        <ul className="action-checklist">
+          {cleanTextList(report.selfCareAdvice).map((item) => (
+            <li key={item}>
+              <Check size={15} />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="report-section">
+        <div className="report-section-title">
+          <ShieldCheck size={18} />
+          <h4>风险分级与仍需确认的信息</h4>
+        </div>
+        <p>{sanitizeUserVisibleText(report.riskReason)}</p>
+        <div className="report-chip-row">
+          {cleanTextList(report.deniedRedFlags).map((item) => (
+            <span className="soft-chip confirmed" key={item}>已确认没有：{item}</span>
+          ))}
+          {cleanTextList(report.unresolvedRedFlags).map((item) => (
+            <span className="soft-chip pending" key={item}>仍需确认：{item}</span>
+          ))}
+        </div>
+      </section>
+
+      {likely.length ? (
+        <section className="report-section">
+          <div className="report-section-title">
+            <Stethoscope size={18} />
+            <h4>当前更倾向的方向</h4>
+          </div>
+          <div className="hypothesis-grid">
+            {likely.map((item, index) => (
+              <article className="hypothesis-panel" key={`${item.name}-${index}`}>
+                <div className="hypothesis-head">
+                  <strong>{sanitizeUserVisibleText(item.name)}</strong>
+                  <span>{LIKELIHOOD_LABELS[item.likelihood] ?? item.likelihood}</span>
+                </div>
+                <EvidenceList title="支持" items={item.supportEvidence} />
+                <EvidenceList title="不确定" items={[...item.againstEvidence, ...item.uncertainties]} />
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {mustRuleOut.length ? (
+        <section className="report-section must-rule-out">
+          <div className="report-section-title">
+            <AlertTriangle size={18} />
+            <h4>需要优先排除的情况</h4>
+          </div>
+          <div className="hypothesis-grid">
+            {mustRuleOut.map((item, index) => (
+              <article className="hypothesis-panel" key={`${item.name}-${index}`}>
+                <div className="hypothesis-head">
+                  <strong>{sanitizeUserVisibleText(item.name)}</strong>
+                  <span>需优先排除</span>
+                </div>
+                <EvidenceList title="依据" items={item.supportEvidence} />
+                <EvidenceList title="不确定" items={[...item.againstEvidence, ...item.uncertainties]} />
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section className="report-section seek-care-section">
+        <div className="report-section-title">
+          <AlertTriangle size={18} />
+          <h4>如果出现以下情况，请尽快就医</h4>
+        </div>
+        <ul className="alert-list">
+          {cleanTextList(report.seekCareWhen).map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+        <p className="department-line">建议科室：{sanitizeUserVisibleText(report.departmentSuggestion)}</p>
+      </section>
+
+      {report.avoidActions.length || report.otcIngredientOptions.length ? (
+        <details className="report-more">
+          <summary>用药边界和暂时避免事项</summary>
+          {report.otcIngredientOptions.length ? (
+            <div className="otc-list">
+              {report.otcIngredientOptions.map((item) => (
+                <p key={item.ingredientCategory}>
+                  <strong>{sanitizeUserVisibleText(item.ingredientCategory)}</strong>
+                  ：适用于{sanitizeUserVisibleText(item.suitableFor)}。注意：{sanitizeUserVisibleText(item.caution)}
+                </p>
+              ))}
+            </div>
+          ) : null}
+          {report.avoidActions.length ? <EvidenceList title="暂时不要做" items={report.avoidActions} /> : null}
+        </details>
+      ) : null}
+
+      <section className="doctor-summary-box">
+        <div className="report-section-title">
+          <FileText size={18} />
+          <h4>医生沟通摘要</h4>
+        </div>
+        <p>{sanitizeUserVisibleText(report.doctorSummary)}</p>
+      </section>
+
+      <details className="report-more">
+        <summary>说明和待医生确认的问题</summary>
+        <p>{sanitizeUserVisibleText(report.uncertaintyNote)}</p>
+        {report.questionsForDoctor.length ? <EvidenceList title="建议向医生确认" items={report.questionsForDoctor} /> : null}
+      </details>
+    </div>
+  )
+}
+
+function StageReportCard({ content, nextStepHints, snapshot }: { content: string; nextStepHints?: string[]; snapshot: AgentSnapshot | null }) {
+  const hints = cleanTextList(nextStepHints?.length ? nextStepHints : snapshot?.missingInfo ?? [])
+  const hypotheses = snapshot?.hypotheses ?? []
+  return (
+    <div className="stage-report">
+      <section className="stage-hero">
+        <span className="report-kicker">阶段性整理</span>
+        <p>当前信息还不足以给出完整判断，先根据已提供内容整理风险、可能方向和下一步要确认的信息。</p>
+      </section>
+
+      <div className="stage-columns">
+        <section className="report-section">
+          <div className="report-section-title">
+            <ShieldCheck size={18} />
+            <h4>当前风险</h4>
+          </div>
+          <span className={`risk-pill tone-${riskTone(snapshot?.riskLevel)}`}>{snapshot ? RISK_LABELS[snapshot.riskLevel] : '评估中'}</span>
+          <p>{sanitizeUserVisibleText(snapshot?.riskReason || '正在根据你的描述整理。')}</p>
+        </section>
+
+        <section className="report-section">
+          <div className="report-section-title">
+            <ClipboardList size={18} />
+            <h4>下一步建议</h4>
+          </div>
+          <ul className="action-checklist compact">
+            {(hints.length ? hints : ['如症状持续或加重，建议线下就诊确认。']).map((item) => (
+              <li key={item}>
+                <Check size={15} />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      </div>
+
+      {hypotheses.length ? (
+        <section className="report-section">
+          <div className="report-section-title">
+            <Stethoscope size={18} />
+            <h4>可能方向</h4>
+          </div>
+          <div className="report-chip-row">
+            {hypotheses.map((item) => (
+              <span className="soft-chip" key={`${item.name}-${item.likelihood}`}>
+                {sanitizeUserVisibleText(item.name)}（{LIKELIHOOD_LABELS[item.likelihood] ?? item.likelihood}）
+              </span>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <details className="report-more">
+        <summary>查看原始整理文本</summary>
+        <MessageContentWithCitations content={sanitizeUserVisibleText(content)} citations={[]} />
+      </details>
+    </div>
+  )
+}
+
 function ChatView({
   chatInput,
   chatMessages,
@@ -855,17 +1181,23 @@ function ChatView({
                     </ul>
                   </details>
                 ) : null}
-                <MessageContentWithCitations
-                  citations={item.role === 'assistant' ? (item.citations ?? []) : []}
-                  content={item.content}
-                />
+                {item.role === 'assistant' && item.kind === 'final_report' && item.report ? (
+                  <ReportMessageCard report={item.report} riskLevel={snapshot?.riskLevel ?? 'R1'} />
+                ) : item.role === 'assistant' && item.kind === 'stage_report' ? (
+                  <StageReportCard content={item.content} nextStepHints={item.nextStepHints} snapshot={snapshot} />
+                ) : (
+                  <MessageContentWithCitations
+                    citations={item.role === 'assistant' ? (item.citations ?? []) : []}
+                    content={sanitizeUserVisibleText(item.content)}
+                  />
+                )}
                 {item.role === 'assistant' && item.citations?.length ? (
                   <CitationFootnotes citations={item.citations} />
                 ) : null}
                 {item.questions?.length ? (
                   <ol className="followup-question-list">
                     {item.questions.map((question) => (
-                      <li key={question.question}>{question.question}</li>
+                      <li key={question.question}>{sanitizeUserVisibleText(question.question)}</li>
                     ))}
                   </ol>
                 ) : null}
@@ -945,8 +1277,8 @@ function ChatView({
             <div className="known-facts-list">
               {snapshot.knownFacts.map((fact) => (
                 <div className="known-fact-row" key={fact.label}>
-                  <span className="fact-label">{fact.label}</span>
-                  <span className="fact-value">{fact.value}</span>
+                  <span className="fact-label">{sanitizeUserVisibleText(fact.label)}</span>
+                  <span className="fact-value">{sanitizeUserVisibleText(fact.value)}</span>
                 </div>
               ))}
             </div>
@@ -963,14 +1295,14 @@ function ChatView({
               <div className="item-icon"><AlertTriangle size={18} /></div>
               <div className="item-content">
                 <span className="item-label">风险等级</span>
-                <span className="item-value">{snapshot ? RISK_LABELS[snapshot.riskLevel] : '评估中'}</span>
+                  <span className="item-value">{snapshot ? RISK_LABELS[snapshot.riskLevel] : '评估中'}</span>
               </div>
             </div>
             <div className="overview-item">
               <div className="item-icon"><Info size={18} /></div>
               <div className="item-content">
                 <span className="item-label">评估说明</span>
-                <span className="item-value">{snapshot?.riskReason || '正在根据你的描述整理'}</span>
+                <span className="item-value">{sanitizeUserVisibleText(snapshot?.riskReason || '正在根据你的描述整理')}</span>
               </div>
             </div>
             <div className="overview-item">
@@ -980,7 +1312,7 @@ function ChatView({
                 <span className="item-value">
                   {snapshot?.hypotheses.length
                     ? snapshot.hypotheses
-                        .map((h) => `${h.name}（${LIKELIHOOD_LABELS[h.likelihood] ?? h.likelihood}）`)
+                        .map((h) => `${sanitizeUserVisibleText(h.name)}（${LIKELIHOOD_LABELS[h.likelihood] ?? h.likelihood}）`)
                         .join('；')
                     : '暂未形成'}
                 </span>
@@ -991,7 +1323,7 @@ function ChatView({
               <div className="item-content">
                 <span className="item-label">待补充信息</span>
                 <span className="item-value">
-                  {snapshot?.missingInfo.length ? snapshot.missingInfo.join('；') : '暂无'}
+                  {snapshot?.missingInfo.length ? snapshot.missingInfo.map((item) => sanitizeUserVisibleText(item)).join('；') : '暂无'}
                 </span>
               </div>
             </div>
@@ -1098,9 +1430,9 @@ function describeStreamEvent(event: AgentStreamEvent): string | null {
         return `▶ ${TOOL_STEP_LABELS[event.toolName] ?? event.toolName}`
       }
       if (event.status === 'error') {
-        return `✗ ${event.summary ?? TOOL_STEP_LABELS[event.toolName] ?? event.toolName}`
+        return `✗ ${sanitizeUserVisibleText(event.summary ?? TOOL_STEP_LABELS[event.toolName] ?? event.toolName)}`
       }
-      return event.summary ? `✓ ${event.summary}` : null
+      return event.summary ? `✓ ${sanitizeUserVisibleText(event.summary)}` : null
     case 'agent_decision':
       return `决策 → ${DECISION_LABELS[event.action] ?? event.action}`
     default:
@@ -1111,6 +1443,8 @@ function describeStreamEvent(event: AgentStreamEvent): string | null {
 const TOOL_STEP_LABELS: Record<string, string> = {
   'symptom.extract': '症状抽取',
   'symptom.domain_classify': '症状域分类',
+  'hypothesis.initial_generate': '初步方向整理',
+  'hypothesis.refine': '方向更新',
   'risk.probe': '风险探查',
   'risk.red_flag_assess': '红旗评估',
   'case.analyze': '病例分析',
@@ -1129,13 +1463,32 @@ const DECISION_LABELS: Record<string, string> = {
   emergency_stop: '急症停止',
 }
 
-async function api<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    method: options.method ?? 'GET',
-    credentials: 'include',
-    headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  })
+const configuredApiTimeoutMs = Number(import.meta.env.VITE_API_REQUEST_TIMEOUT_MS)
+const API_REQUEST_TIMEOUT_MS =
+  Number.isFinite(configuredApiTimeoutMs) && configuredApiTimeoutMs > 0 ? configuredApiTimeoutMs : 12000
+
+async function api<T>(path: string, options: { method?: string; body?: unknown; timeoutMs?: number } = {}): Promise<T> {
+  const controller = new AbortController()
+  const timeoutMs = options.timeoutMs ?? API_REQUEST_TIMEOUT_MS
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
+
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: options.method ?? 'GET',
+      credentials: 'include',
+      headers: options.body ? { 'Content-Type': 'application/json' } : undefined,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      signal: controller.signal,
+    })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('请求超时，请检查网络或稍后重试。', { cause: error })
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timeout)
+  }
 
   const data = await response.json().catch(() => ({}))
   if (!response.ok) {
@@ -1161,7 +1514,7 @@ function formatDate(value: string) {
 /** 把持久化的消息行还原成前端聊天消息（含追问、引用、分析过程） */
 function rowToChatMessage(row: ChatMessageRow): ChatMessage {
   if (row.role === 'user') {
-    return { role: 'user', content: row.content }
+    return { role: 'user', content: sanitizeUserVisibleText(row.content) }
   }
 
   const payload = row.payload ?? {}
@@ -1169,9 +1522,9 @@ function rowToChatMessage(row: ChatMessageRow): ChatMessage {
     .map((event) => describeStreamEvent(event))
     .filter((line): line is string => Boolean(line))
 
-  let content = row.content
+  let content = sanitizeUserVisibleText(row.content)
   if (row.kind === 'emergency' && payload.doctorSummary) {
-    content = `${row.content}\n\n医生沟通摘要（可直接出示给医生）：\n${payload.doctorSummary}`
+    content = `${content}\n\n医生沟通摘要（可直接出示给医生）：\n${sanitizeUserVisibleText(payload.doctorSummary)}`
   }
 
   return {
@@ -1182,6 +1535,8 @@ function rowToChatMessage(row: ChatMessageRow): ChatMessage {
     questions: payload.questions,
     citations: payload.citations ?? [],
     process: process.length ? process : undefined,
+    report: payload.report,
+    nextStepHints: payload.nextStepHints?.map((hint) => sanitizeUserVisibleText(hint)),
   }
 }
 
@@ -1195,7 +1550,7 @@ function agentResponseToChatMessage(response: AgentResponse): ChatMessage {
       role: 'assistant',
       kind: 'followup',
       followupMode: response.mode,
-      content: response.intro,
+      content: sanitizeUserVisibleText(response.intro),
       questions: response.questions,
       citations,
     }
@@ -1205,7 +1560,7 @@ function agentResponseToChatMessage(response: AgentResponse): ChatMessage {
     return {
       role: 'assistant',
       kind: 'emergency',
-      content: `${response.content}\n\n医生沟通摘要（可直接出示给医生）：\n${response.doctorSummary}`,
+      content: `${sanitizeUserVisibleText(response.content)}\n\n医生沟通摘要（可直接出示给医生）：\n${sanitizeUserVisibleText(response.doctorSummary)}`,
       citations,
     }
   }
@@ -1214,7 +1569,8 @@ function agentResponseToChatMessage(response: AgentResponse): ChatMessage {
     return {
       role: 'assistant',
       kind: 'final_report',
-      content: response.rendered,
+      content: sanitizeUserVisibleText(response.rendered),
+      report: response.report,
       citations,
     }
   }
@@ -1222,7 +1578,8 @@ function agentResponseToChatMessage(response: AgentResponse): ChatMessage {
   return {
     role: 'assistant',
     kind: 'stage_report',
-    content: response.content,
+    content: sanitizeUserVisibleText(response.content),
+    nextStepHints: response.nextStepHints,
     citations,
   }
 }

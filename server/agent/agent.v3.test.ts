@@ -8,7 +8,7 @@
 // - 红旗规则、风险分级、guard 全部为代码执行，断言为确定性结果。
 
 import assert from 'node:assert/strict'
-import { createCareCueAgentRuntime, type AgentResponse } from './index.ts'
+import { createCareCueAgentRuntime, type AgentResponse, type AgentStreamEvent } from './index.ts'
 import { TraceLogger } from './logs/traceLogger.ts'
 import { LlmUnavailableError, type LlmClient, type LlmStructuredOptions } from './llm/llmClient.ts'
 import type { SearchClient, RawSearchHit } from './search/medicalSearchTool.ts'
@@ -122,6 +122,57 @@ function createRuntime(options: { llm?: MockResponses; pages?: MockPage[] } = {}
 
 function responseText(response: AgentResponse): string {
   return JSON.stringify(response)
+}
+
+function userVisibleText(response: AgentResponse): string {
+  const parts: string[] = [
+    response.stateSnapshot.riskReason,
+    ...response.stateSnapshot.knownFacts.flatMap((f) => [f.label, f.value]),
+    ...response.stateSnapshot.hypotheses.map((h) => h.name),
+    ...response.stateSnapshot.missingInfo,
+  ]
+
+  if (response.type === 'followup') {
+    parts.push(response.intro, ...response.questions.flatMap((q) => [q.question, q.reason]))
+  } else if (response.type === 'emergency') {
+    parts.push(response.content, response.doctorSummary)
+  } else if (response.type === 'stage_report') {
+    parts.push(response.content, ...response.nextStepHints)
+  } else {
+    const report = response.report
+    parts.push(
+      response.rendered,
+      report.currentConclusion,
+      report.riskReason,
+      ...report.deniedRedFlags,
+      ...report.unresolvedRedFlags,
+      ...report.hypotheses.flatMap((h) => [
+        h.name,
+        ...h.supportEvidence,
+        ...h.againstEvidence,
+        ...h.uncertainties,
+      ]),
+      ...report.selfCareAdvice,
+      ...report.otcIngredientOptions.flatMap((o) => [o.ingredientCategory, o.suitableFor, o.caution]),
+      ...report.avoidActions,
+      ...report.seekCareWhen,
+      report.departmentSuggestion,
+      ...report.questionsForDoctor,
+      report.doctorSummary,
+      report.uncertaintyNote,
+    )
+  }
+
+  return parts.join('\n')
+}
+
+function assertNoInternalUserText(response: AgentResponse) {
+  const text = userVisibleText(response)
+  assert.ok(!/R[0-3](?![0-9A-Za-z])/.test(text), `输出泄漏内部风险码：${text.slice(0, 200)}`)
+  assert.ok(!/\b(?:skin_mild|throat_respiratory|gastrointestinal|eye_discomfort|chest_pain|headache|limb_pain|fever|general_discomfort)\b/.test(text), `输出泄漏症状域 code：${text.slice(0, 200)}`)
+  assert.ok(!/\b(?:symptoms|userProfile)\.[A-Za-z]+/.test(text), `输出泄漏字段路径：${text.slice(0, 200)}`)
+  assert.ok(!/\b[A-Z_]*TOOL_[A-Z_]+\b/.test(text), `输出泄漏工具错误码：${text.slice(0, 200)}`)
+  assert.ok(!/\b(?:more_likely|less_likely|must_rule_out)\b/.test(text), `输出泄漏倾向枚举：${text.slice(0, 200)}`)
 }
 
 // ---------------------------------------------------------------------------
@@ -412,6 +463,96 @@ const tests: TestCase[] = [
     },
   },
   {
+    // 真实 DeepSeek json_object 曾返回 symptoms/userProfile 嵌套结构；应规范化接收，而不是丢弃为降级
+    name: '症状抽取：兼容 LLM 嵌套返回并规范化为病例状态',
+    run: async () => {
+      const { runtime } = createRuntime({
+        llm: {
+          symptom_extraction: {
+            symptoms: {
+              chiefComplaint: '背部频繁长痘痘',
+              userOriginalText: ['背部频繁涨豆豆(红色)'],
+              location: '背部',
+              character: '红色痘痘',
+              relievingFactors: ['洗澡后减轻'],
+              aggravatingFactors: ['3-5天不洗澡则加重'],
+              associatedSymptoms: [],
+              negativeSymptoms: [],
+            },
+            userProfile: {
+              age: 24,
+              gender: '男',
+            },
+            unclearFields: [],
+          },
+        },
+      })
+
+      const response = await runtime.run({
+        userMessage: '男、24、背部频繁涨豆豆(红色)，如果洗澡，有所减轻，如果3-5天不洗澡，又开始爆豆',
+      })
+
+      const facts = new Map(response.stateSnapshot.knownFacts.map((fact) => [fact.label, fact.value]))
+      assert.equal(facts.get('年龄'), '24岁')
+      assert.equal(facts.get('性别'), '男')
+      assert.equal(facts.get('部位'), '背部')
+      assert.ok(response.stateSnapshot.knownFacts.some((fact) => fact.value.includes('洗澡后减轻')))
+      assertNoInternalUserText(response)
+    },
+  },
+  {
+    // DeepSeek 曾返回 hypothesis/probability/evidence/uncertainties 等字段名，不能直接判 schema 失败
+    name: '假设生成：兼容 LLM 非内部字段名并规范化为假设状态',
+    run: async () => {
+      const { runtime } = createRuntime({
+        llm: {
+          symptom_extraction: extraction({
+            chiefComplaint: '背部频繁长痘痘',
+            location: '背部',
+            age: 24,
+            sex: 'male',
+            relievingFactors: ['洗澡后减轻'],
+            triggers: ['不洗澡'],
+          }),
+          initial_hypothesis: {
+            hypotheses: [
+              {
+                hypothesis: '痤疮',
+                probability: '可能',
+                evidence: ['背部反复出现红色痘样皮损', '清洁后减轻'],
+                uncertainties: ['持续时间', '是否有脓疱或疼痛'],
+                risk: '低',
+                explanation: '背部反复痘样皮损符合痤疮常见表现之一。',
+              },
+              {
+                direction: '毛囊炎',
+                tendency: 'possible',
+                reasons: ['背部红色丘疹可能与毛囊受刺激相关'],
+                needMoreInfo: ['是否瘙痒', '是否有流脓'],
+              },
+            ],
+            missingInfo: ['持续时间', '是否疼痛或流脓'],
+            conclusion: '目前更偏向常见轻微皮肤问题，需要补充皮损细节。',
+            shouldAskUser: true,
+            shouldSearchMore: false,
+            shouldGenerateCarePlan: false,
+            canFinalAnswer: false,
+          },
+        },
+      })
+
+      const response = await runtime.run({
+        userMessage: '男、24、背部频繁涨豆豆(红色)，如果洗澡，有所减轻，如果3-5天不洗澡，又开始爆豆',
+      })
+
+      const names = response.stateSnapshot.hypotheses.map((item) => item.name)
+      assert.ok(names.includes('痤疮'), `应保留模型返回的痤疮方向，实际：${names.join('、')}`)
+      assert.ok(names.includes('毛囊炎'), `应保留模型返回的毛囊炎方向，实际：${names.join('、')}`)
+      assert.ok(response.stateSnapshot.missingInfo.some((item) => item.includes('持续时间')))
+      assertNoInternalUserText(response)
+    },
+  },
+  {
     // §40 case 15：多轮追问去重 — 已问过的问题不再重复，补充信息后推进分析
     name: '40.15 多轮对话：追问不重复，补充信息后推进分析并维持 R2',
     run: async () => {
@@ -567,6 +708,130 @@ const tests: TestCase[] = [
       if (emergency.type === 'emergency') {
         assert.ok(!/R[0-3](?![0-9A-Za-z])/.test(emergency.content), '急症输出泄漏内部风险码')
       }
+    },
+  },
+  {
+    // 用户可见文本不允许泄漏症状域 code、字段路径、错误码和倾向枚举
+    name: '安全：用户可见输出不包含内部字段、症状域 code、错误码',
+    run: async () => {
+      const fallback = await createRuntime().runtime.run({
+        userMessage: '最近脸上长了很多痘，尤其下巴和脸颊，熬夜后更严重。',
+      })
+      assertNoInternalUserText(fallback)
+
+      const stage = await createRuntime({
+        llm: {
+          agent_decision: {
+            action: 'analyze_case',
+            reason: '循环分析',
+            decisionGoal: '测试步数上限',
+            confidence: 'low',
+            priority: 'low',
+            shouldReturnToUser: false,
+          },
+        },
+      }).runtime.run({ userMessage: '嗓子疼了两天，咽东西的时候疼。' })
+      assert.equal(stage.type, 'stage_report')
+      assertNoInternalUserText(stage)
+
+      const finalWithLeakyMock = await createRuntime({
+        llm: {
+          final_report: {
+            currentConclusion: '根据目前信息，更像 skin_mild 方向，但不能确诊。',
+            riskLevel: 'R0',
+            riskReason: '当前为 R0，仍需确认 symptoms.location 和 symptoms.associatedSymptoms。',
+            deniedRedFlags: ['R3'],
+            unresolvedRedFlags: ['symptoms.associatedSymptoms'],
+            hypotheses: [
+              {
+                name: '痤疮',
+                likelihood: 'possible',
+                supportEvidence: ['症状域 skin_mild 的常见方向之一'],
+                againstEvidence: [],
+                uncertainties: ['AI 分析暂不可用，本方向仅为该症状域常见参考。'],
+              },
+            ],
+            selfCareAdvice: ['记录症状变化。'],
+            otcIngredientOptions: [],
+            avoidActions: [],
+            seekCareWhen: ['如果出现 R3 表现请就医。'],
+            departmentSuggestion: '皮肤科',
+            questionsForDoctor: ['请确认 symptoms.location。'],
+            doctorSummary: '主诉：skin_mild，需确认 symptoms.location。',
+            uncertaintyNote: 'TOOL_RUNTIME_ERROR 后的阶段性整理。',
+            references: [],
+          },
+        },
+      }).runtime.run({ userMessage: '脸上长痘。' })
+      assert.equal(finalWithLeakyMock.type, 'final_report')
+      assertNoInternalUserText(finalWithLeakyMock)
+    },
+  },
+  {
+    // 流式过程步骤失败时也不能把内部错误码展示给用户
+    name: '安全：流式工具步骤失败摘要不暴露 TOOL_RUNTIME_ERROR',
+    run: async () => {
+      const { runtime } = createRuntime({
+        llm: {
+          symptom_extraction: () => {
+            throw new Error('boom')
+          },
+        },
+      })
+      const events: AgentStreamEvent[] = []
+      await runtime.run({
+        userMessage: '脸上长痘。',
+        onEvent: (event) => events.push(event),
+      })
+
+      const summaries = events
+        .filter((event): event is Extract<AgentStreamEvent, { type: 'tool_step' }> =>
+          event.type === 'tool_step' && event.phase === 'done',
+        )
+        .map((event) => event.summary ?? '')
+        .join('\n')
+
+      assert.ok(!/TOOL_RUNTIME_ERROR|TOOL_INPUT_INVALID|TOOL_OUTPUT_INVALID/.test(summaries), `工具步骤泄漏内部错误码：${summaries}`)
+      assert.ok(!/hypothesis\.initial_generate|symptom\.extract/.test(summaries), `工具步骤泄漏内部工具名：${summaries}`)
+      assert.ok(/症状抽取：暂时无法完成/.test(summaries), `应显示自然语言失败原因：${summaries}`)
+    },
+  },
+  {
+    // LLM 超时应被工具内部捕获并降级，避免外层 Tool timeout 冒出 TOOL_RUNTIME_ERROR
+    name: '超时：症状抽取 LLM 超时走规则降级，不产生工具运行错误',
+    run: async () => {
+      const { runtime } = createRuntime({
+        llm: {
+          symptom_extraction: () => {
+            throw new LlmUnavailableError('LLM request timeout after 10ms')
+          },
+        },
+      })
+      const events: AgentStreamEvent[] = []
+      const response = await runtime.run({
+        userMessage: '男、24、背部频繁长痘痘，红色，最近熬夜后更明显。',
+        onEvent: (event) => events.push(event),
+      })
+
+      assertNoInternalUserText(response)
+
+      const symptomDone = events.find(
+        (event): event is Extract<AgentStreamEvent, { type: 'tool_step' }> =>
+          event.type === 'tool_step' &&
+          event.phase === 'done' &&
+          event.toolName === 'symptom.extract',
+      )
+      assert.ok(symptomDone, '应记录症状抽取完成事件')
+      assert.equal(symptomDone.status, 'success', 'LLM 超时应走规则降级并返回成功')
+      assert.equal(symptomDone.summary, '症状抽取：完成')
+
+      const summaries = events
+        .filter((event): event is Extract<AgentStreamEvent, { type: 'tool_step' }> =>
+          event.type === 'tool_step' && event.phase === 'done',
+        )
+        .map((event) => event.summary ?? '')
+        .join('\n')
+      assert.ok(!/TOOL_RUNTIME_ERROR|Tool timeout/.test(summaries), `不应出现工具超时错误：${summaries}`)
     },
   },
   {

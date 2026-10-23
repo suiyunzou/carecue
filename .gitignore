@@ -34,3 +34,24 @@ dist-ssr
 # Trae specific
 .trae
 
+# Local data and deployment identity: never publish
+/.firecrawl/
+/.vercel/
+/.claude/
+/.traces/
+/.uploads/
+/contest/
+/interaction.log.txt
+/test-errors.txt
+/docs/lesson.md
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.pem
+*.key
+*.p12
+*.pfx
+*.har
+*.jsonl
+

@@ -20,6 +20,18 @@ export function buildUnderstandSymptomsPrompt(userMessage: string, state: CaseSt
 10. 牵涉痛/放射痛（如胸痛时左肩、后背、下颌也疼）必须进入 associatedSymptoms（写成“疼痛放射至左肩”这类表达）。
 11. “按压能缓解”“休息后缓解”等进入 relievingFactors；“今天出现”“昨晚开始”等进入 onsetTime。
 
+输出格式必须是单层 JSON 对象，不要包在 symptoms、userProfile、data、result 等外层对象中。
+必须包含以下全部顶层字段，无法确定时也要输出空字符串、空数组或 null：
+chiefComplaint, onsetTime, duration, location, severity, frequency, painQuality, onsetPattern,
+triggers, relievingFactors, associatedSymptoms, negativeSymptoms, progression,
+age, sex, pregnancy, chronicDiseases, currentMedications, unclearFields.
+
+字段取值要求：
+- progression 只能是 improving、stable、worsening、unknown。
+- sex 只能是 male、female、unknown。
+- age 无法确定时输出 null，不要省略字段。
+- pregnancy 无法确定时输出 null，不要省略字段。
+
 口语归一参考：
 “喘不上气”→呼吸困难；“快晕了”→接近晕厥；“半边没力气”→单侧肢体无力；
 “说话含糊”→言语异常；“眼睛磨得慌”→眼部异物感；“脸上红疙瘩”→皮疹/丘疹/痘样损害。

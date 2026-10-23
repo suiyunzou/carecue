@@ -12,12 +12,15 @@ import { isRecoverableLlmError } from '../llm/llmClient.ts'
 
 const inputSchema = z.object({})
 
+const SYMPTOM_DOMAIN_LLM_BUDGET_MS = Number(process.env.AGENT_SYMPTOM_DOMAIN_LLM_BUDGET_MS ?? 10000)
+const SYMPTOM_DOMAIN_TOOL_TIMEOUT_MS = Number(process.env.AGENT_SYMPTOM_DOMAIN_TOOL_TIMEOUT_MS ?? 25000)
+
 const outputSchema = z.object({
   primaryDomain: z.enum(SYMPTOM_DOMAINS),
-  secondaryDomains: z.array(z.enum(SYMPTOM_DOMAINS)),
-  triggerTerms: z.array(z.string()),
-  supportedDepth: z.enum(['full', 'red_flag_only']),
-  reason: z.string(),
+  secondaryDomains: z.array(z.enum(SYMPTOM_DOMAINS)).default([]),
+  triggerTerms: z.array(z.string()).default([]),
+  supportedDepth: z.enum(['full', 'red_flag_only']).default('red_flag_only'),
+  reason: z.string().default('根据症状描述识别。'),
 })
 
 export type SymptomDomainClassifyOutput = z.infer<typeof outputSchema>
@@ -28,7 +31,7 @@ export const symptomDomainClassifyTool = defineTool({
   inputSchema,
   outputSchema,
   guardLevel: 'safe_read',
-  timeoutMs: 25000,
+  timeoutMs: SYMPTOM_DOMAIN_TOOL_TIMEOUT_MS,
 
   async call(_input, ctx) {
     const byTrigger = classifyByTriggerTerms(ctx.state)
@@ -43,6 +46,7 @@ export const symptomDomainClassifyTool = defineTool({
         schemaName: 'symptom_domain_classify',
         system: prompt.system,
         user: prompt.user,
+        maxDurationMs: SYMPTOM_DOMAIN_LLM_BUDGET_MS,
         trace: { traceLogger: ctx.traceLogger, caseId: ctx.caseId, node: 'symptom.domain_classify' },
       })
       const config = getDomainConfig(llmResult.primaryDomain)

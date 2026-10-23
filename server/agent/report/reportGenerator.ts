@@ -8,6 +8,9 @@ import { isRecoverableLlmError } from '../llm/llmClient.ts'
 import { finalReportSchema, type FinalReport } from './reportSchema.ts'
 import type { CaseState } from '../case/CaseState.ts'
 
+const REPORT_LLM_BUDGET_MS = Number(process.env.AGENT_REPORT_LLM_BUDGET_MS ?? 30000)
+const REPORT_TOOL_TIMEOUT_MS = Number(process.env.AGENT_REPORT_TOOL_TIMEOUT_MS ?? 50000)
+
 const inputSchema = z.object({
   reportType: z.enum(['final', 'stage']),
   guardIssues: z.array(z.string()).optional(),
@@ -19,7 +22,7 @@ export const reportGenerateTool = defineTool({
   inputSchema,
   outputSchema: finalReportSchema,
   guardLevel: 'medical_output',
-  timeoutMs: 50000,
+  timeoutMs: REPORT_TOOL_TIMEOUT_MS,
 
   guard(_input, state) {
     return blockWhenEmergency(state)
@@ -34,6 +37,7 @@ export const reportGenerateTool = defineTool({
         system: prompt.system,
         user: prompt.user,
         temperature: 0.2,
+        maxDurationMs: REPORT_LLM_BUDGET_MS,
         trace: { traceLogger: ctx.traceLogger, caseId: ctx.caseId, node: 'report.generate' },
       })
     } catch (error) {

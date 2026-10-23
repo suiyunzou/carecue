@@ -12,7 +12,7 @@ import {
   type StageReportResponse,
 } from '../agentResponse.ts'
 import { buildKnownFacts, fieldHasValue } from '../case/stateFields.ts'
-import { riskLevelLabel, sanitizeInternalCodes } from '../risk/riskPresentation.ts'
+import { riskLevelLabel, sanitizeUserVisibleText } from '../risk/riskPresentation.ts'
 
 const LIKELIHOOD_LABELS: Record<string, string> = {
   more_likely: '更像',
@@ -54,13 +54,51 @@ function withResponseMeta<T extends { caseId: string; riskLevel: CaseState['risk
   return { ...response, citations }
 }
 
+function sanitizeStringList(items: string[]): string[] {
+  return items.map((item) => sanitizeUserVisibleText(item))
+}
+
+function sanitizeFinalReport(report: FinalReport): FinalReport {
+  return {
+    ...report,
+    currentConclusion: sanitizeUserVisibleText(report.currentConclusion),
+    riskReason: sanitizeUserVisibleText(report.riskReason),
+    deniedRedFlags: sanitizeStringList(report.deniedRedFlags),
+    unresolvedRedFlags: sanitizeStringList(report.unresolvedRedFlags),
+    hypotheses: report.hypotheses.map((h) => ({
+      ...h,
+      name: sanitizeUserVisibleText(h.name),
+      supportEvidence: sanitizeStringList(h.supportEvidence),
+      againstEvidence: sanitizeStringList(h.againstEvidence),
+      uncertainties: sanitizeStringList(h.uncertainties),
+    })),
+    selfCareAdvice: sanitizeStringList(report.selfCareAdvice),
+    otcIngredientOptions: report.otcIngredientOptions.map((o) => ({
+      ingredientCategory: sanitizeUserVisibleText(o.ingredientCategory),
+      suitableFor: sanitizeUserVisibleText(o.suitableFor),
+      caution: sanitizeUserVisibleText(o.caution),
+    })),
+    avoidActions: sanitizeStringList(report.avoidActions),
+    seekCareWhen: sanitizeStringList(report.seekCareWhen),
+    departmentSuggestion: sanitizeUserVisibleText(report.departmentSuggestion),
+    questionsForDoctor: sanitizeStringList(report.questionsForDoctor),
+    doctorSummary: sanitizeUserVisibleText(report.doctorSummary),
+    uncertaintyNote: sanitizeUserVisibleText(report.uncertaintyNote),
+    references: report.references.map((r) => ({
+      title: sanitizeUserVisibleText(r.title),
+      url: r.url,
+    })),
+  }
+}
+
 export const reportRenderer = {
   renderFinalReport(state: CaseState, report: FinalReport): FinalReportResponse {
+    const safeReport = sanitizeFinalReport(report)
     const citations = buildCitations(state)
     const urlToIndex = buildUrlIndex(citations)
 
-    const likelyHypotheses = report.hypotheses.filter((h) => h.likelihood !== 'must_rule_out')
-    const mustRuleOut = report.hypotheses.filter((h) => h.likelihood === 'must_rule_out')
+    const likelyHypotheses = safeReport.hypotheses.filter((h) => h.likelihood !== 'must_rule_out')
+    const mustRuleOut = safeReport.hypotheses.filter((h) => h.likelihood === 'must_rule_out')
 
     const renderHypothesis = (h: FinalReport['hypotheses'][number], i: number) => {
       const marker = hypothesisCitation(state, h.name, urlToIndex)
@@ -68,10 +106,10 @@ export const reportRenderer = {
     }
 
     const sections: string[] = [
-      `当前结论\n${report.currentConclusion}`,
-      `风险分级与理由\n当前风险判断：${riskLevelLabel(state.risk.level)}\n${report.riskReason}${
-        report.deniedRedFlags.length > 0 ? `\n已否认的危险信号：${report.deniedRedFlags.join('、')}` : ''
-      }${report.unresolvedRedFlags.length > 0 ? `\n仍待确认：${report.unresolvedRedFlags.join('、')}` : ''}`,
+      `当前结论\n${safeReport.currentConclusion}`,
+      `风险分级与理由\n当前风险判断：${riskLevelLabel(state.risk.level)}\n${safeReport.riskReason}${
+        safeReport.deniedRedFlags.length > 0 ? `\n已否认的危险信号：${safeReport.deniedRedFlags.join('、')}` : ''
+      }${safeReport.unresolvedRedFlags.length > 0 ? `\n仍待确认：${safeReport.unresolvedRedFlags.join('、')}` : ''}`,
     ]
 
     if (likelyHypotheses.length > 0) {
@@ -83,35 +121,35 @@ export const reportRenderer = {
       )
     }
 
-    sections.push(`你现在可以先做什么\n${report.selfCareAdvice.map((a) => `- ${a}`).join('\n')}`)
+    sections.push(`你现在可以先做什么\n${safeReport.selfCareAdvice.map((a) => `- ${a}`).join('\n')}`)
 
-    if (report.otcIngredientOptions.length > 0) {
+    if (safeReport.otcIngredientOptions.length > 0) {
       sections.push(
-        `可以关注的非处方成分方向\n${report.otcIngredientOptions
+        `可以关注的非处方成分方向\n${safeReport.otcIngredientOptions
           .map((o) => `- ${o.ingredientCategory}：适用于${o.suitableFor}。注意：${o.caution}`)
           .join('\n')}`,
       )
     }
-    if (report.avoidActions.length > 0) {
-      sections.push(`暂时不要做什么\n${report.avoidActions.map((a) => `- ${a}`).join('\n')}`)
+    if (safeReport.avoidActions.length > 0) {
+      sections.push(`暂时不要做什么\n${safeReport.avoidActions.map((a) => `- ${a}`).join('\n')}`)
     }
     sections.push(
-      `什么情况需要就医或急诊\n${report.seekCareWhen.map((a) => `- ${a}`).join('\n')}`,
-      `建议就诊科室\n${report.departmentSuggestion}`,
+      `什么情况需要就医或急诊\n${safeReport.seekCareWhen.map((a) => `- ${a}`).join('\n')}`,
+      `建议就诊科室\n${safeReport.departmentSuggestion}`,
     )
-    if (report.questionsForDoctor.length > 0) {
-      sections.push(`建议向医生确认的问题\n${report.questionsForDoctor.map((qq) => `- ${qq}`).join('\n')}`)
+    if (safeReport.questionsForDoctor.length > 0) {
+      sections.push(`建议向医生确认的问题\n${safeReport.questionsForDoctor.map((qq) => `- ${qq}`).join('\n')}`)
     }
-    sections.push(`医生沟通摘要（可直接出示给医生）\n${report.doctorSummary}`)
+    sections.push(`医生沟通摘要（可直接出示给医生）\n${safeReport.doctorSummary}`)
 
     // 最终渲染统一兜底清洗：LLM 生成段落里混入的内部风险码（R0-R3）一律替换为用户可读表述
-    const rendered = sanitizeInternalCodes(
+    const rendered = sanitizeUserVisibleText(
       [
         numberSections(sections),
         citations.length > 0
           ? `参考依据\n${citations.map((c) => `${citationMarker(c.index)} ${c.title}`).join('\n')}`
           : `参考依据\n${renderSearchTraceNote(state)}`,
-        `说明\n${report.uncertaintyNote}`,
+        `说明\n${safeReport.uncertaintyNote}`,
       ].join('\n\n'),
     )
 
@@ -119,7 +157,7 @@ export const reportRenderer = {
       type: 'final_report',
       caseId: state.caseId,
       riskLevel: state.risk.level,
-      report,
+      report: safeReport,
       rendered,
       stateSnapshot: buildStateSnapshot(state),
     })
@@ -154,9 +192,9 @@ export const reportRenderer = {
       type: 'emergency',
       caseId: state.caseId,
       riskLevel: 'R3',
-      content: sanitizeInternalCodes(content),
+      content: sanitizeUserVisibleText(content),
       triggeredCombination: state.risk.redFlags,
-      doctorSummary: sanitizeInternalCodes(doctorSummary),
+      doctorSummary: sanitizeUserVisibleText(doctorSummary),
       stateSnapshot: buildStateSnapshot(state),
     })
   },
@@ -177,7 +215,7 @@ export const reportRenderer = {
       parts.push(`目前了解到：\n${facts.map((f) => `- ${f.label}：${f.value}`).join('\n')}`)
     }
 
-    const riskLines = [`当前风险评估：${riskLevelLabel(state.risk.level)}。${sanitizeInternalCodes(state.risk.reason)}`]
+    const riskLines = [`当前风险评估：${riskLevelLabel(state.risk.level)}。${sanitizeUserVisibleText(state.risk.reason)}`]
     if (state.riskProbe.redFlagConfirmed.length > 0) {
       riskLines.push(`需要警惕的信号：${state.riskProbe.redFlagConfirmed.join('、')}`)
     }
@@ -223,7 +261,7 @@ export const reportRenderer = {
       type: 'stage_report',
       caseId: state.caseId,
       riskLevel: state.risk.level,
-      content: sanitizeInternalCodes(parts.join('\n\n')),
+      content: sanitizeUserVisibleText(parts.join('\n\n')),
       reason: input.reason,
       failureCode: input.failureCode,
       nextStepHints: hints,
@@ -242,7 +280,7 @@ export function buildPendingQuestions(state: CaseState): string[] {
       return !paths.some((path) => fieldHasValue(state, path))
     })
     .slice(0, 3)
-    .map((m) => m.question)
+    .map((m) => sanitizeUserVisibleText(m.question))
 }
 
 /** 检索情况说明：搜了什么、结果如何 */

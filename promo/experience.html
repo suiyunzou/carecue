@@ -1,0 +1,1486 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>问康 CareCue · 真实体验</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;800;900&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --page: #f6fbf9;
+  --panel: #ffffff;
+  --paper: #fbf7ef;
+  --ink: #163b3a;
+  --body: #486765;
+  --muted: #6f8683;
+  --teal: #08766f;
+  --teal-deep: #064f4b;
+  --teal-soft: #e4f5f1;
+  --amber: #a86c12;
+  --amber-soft: #fff8e3;
+  --red: #b6372b;
+  --red-soft: #fff0ec;
+  --line: rgba(8, 118, 111, 0.15);
+  --shadow: 0 22px 70px rgba(27, 75, 74, 0.10);
+  --serif: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  --sans: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  font-family: var(--sans);
+  color: var(--body);
+  background:
+    linear-gradient(rgba(8, 118, 111, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(8, 118, 111, 0.035) 1px, transparent 1px),
+    radial-gradient(900px 520px at 92% 0%, rgba(8, 118, 111, 0.11), transparent 64%),
+    radial-gradient(700px 420px at 0% 40%, rgba(232, 112, 79, 0.08), transparent 62%),
+    var(--page);
+  background-size: 42px 42px, 42px 42px, auto, auto, auto;
+  overflow-x: hidden;
+}
+
+button, input, textarea, select { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+button { cursor: pointer; }
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 64px;
+  padding: 0 clamp(18px, 5vw, 72px);
+  background: rgba(246, 251, 249, 0.92);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(16px);
+}
+
+.brand, .nav-actions, .btn, .ghost-btn, .icon-btn {
+  display: inline-flex;
+  align-items: center;
+}
+
+.brand {
+  gap: 11px;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  color: #fff;
+  background: var(--teal);
+  border-radius: 11px;
+  box-shadow: 0 12px 26px rgba(8, 118, 111, 0.22);
+}
+
+.brand strong {
+  display: block;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 19px;
+  line-height: 1.05;
+}
+
+.brand small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 2.6px;
+  line-height: 1;
+}
+
+.nav-actions {
+  gap: 10px;
+}
+
+.btn, .ghost-btn, .icon-btn {
+  justify-content: center;
+  min-height: 42px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-weight: 900;
+  text-decoration: none;
+  transition: transform .16s ease, background .16s ease, box-shadow .16s ease;
+}
+
+.btn {
+  gap: 8px;
+  padding: 0 18px;
+  color: #fff;
+  background: var(--teal);
+  box-shadow: 0 14px 30px rgba(8, 118, 111, 0.22);
+}
+
+.ghost-btn {
+  gap: 8px;
+  padding: 0 16px;
+  color: #174a49;
+  background: rgba(255, 255, 255, 0.68);
+  border-color: var(--line);
+}
+
+.icon-btn {
+  width: 42px;
+  color: #174a49;
+  background: #fff;
+  border-color: var(--line);
+}
+
+.btn:hover, .ghost-btn:hover, .icon-btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: .72;
+  transform: none;
+}
+
+.app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: 24px;
+  width: min(1280px, calc(100% - 40px));
+  margin: 28px auto 54px;
+}
+
+.main-col, .side-col {
+  min-width: 0;
+}
+
+.main-col {
+  display: grid;
+  gap: 18px;
+}
+
+.side-col {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+}
+
+.panel {
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.consult-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  gap: 20px;
+  padding: clamp(22px, 4vw, 36px);
+}
+
+.kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--teal);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 2.4px;
+}
+
+h1, h2, h3 {
+  color: var(--ink);
+}
+
+.consult-copy h1 {
+  max-width: 720px;
+  margin: 12px 0 10px;
+  font-family: var(--serif);
+  font-size: clamp(30px, 4.4vw, 52px);
+  line-height: 1.16;
+  letter-spacing: 1px;
+}
+
+.consult-copy > p {
+  max-width: 760px;
+  margin-bottom: 24px;
+  color: var(--body);
+  font-size: 18px;
+  line-height: 1.75;
+}
+
+.input-block {
+  display: grid;
+  gap: 12px;
+}
+
+label {
+  display: grid;
+  gap: 9px;
+  color: var(--ink);
+  font-weight: 900;
+}
+
+textarea, input {
+  width: 100%;
+  color: var(--ink);
+  background: #f9fdfb;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  outline: none;
+}
+
+textarea {
+  min-height: 128px;
+  padding: 16px;
+  resize: vertical;
+  line-height: 1.65;
+}
+
+textarea:focus, input:focus {
+  border-color: rgba(8, 118, 111, 0.45);
+  box-shadow: 0 0 0 4px rgba(8, 118, 111, 0.12);
+}
+
+.example-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.example-row button {
+  min-height: 40px;
+  padding: 0 13px;
+  color: #174a49;
+  background: var(--teal-soft);
+  border: 1px solid rgba(8, 118, 111, 0.18);
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+.case-intro {
+  display: grid;
+  gap: 8px;
+}
+
+.case-intro strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.case-intro span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.case-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.case-card {
+  display: grid;
+  gap: 7px;
+  min-height: 116px;
+  padding: 14px;
+  color: var(--body);
+  text-align: left;
+  background: #f9fdfb;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+
+.case-card:hover,
+.case-card.active {
+  transform: translateY(-1px);
+  background: #fff;
+  border-color: rgba(8, 118, 111, 0.36);
+  box-shadow: 0 10px 26px rgba(8, 118, 111, 0.10);
+}
+
+.case-card b {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.case-card span {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.case-card em {
+  justify-self: start;
+  padding: 2px 8px;
+  color: var(--teal);
+  background: var(--teal-soft);
+  border-radius: 999px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.case-card.danger em {
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.start-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.meta-note {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.status-card {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  padding: 22px;
+  background: var(--teal-soft);
+  border: 1px solid rgba(8, 118, 111, 0.18);
+  border-radius: 14px;
+}
+
+.status-card.urgent {
+  background: var(--red-soft);
+  border-color: rgba(182, 55, 43, 0.28);
+}
+
+.status-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  color: #fff;
+  background: var(--teal);
+  border-radius: 12px;
+}
+
+.status-card.urgent .status-icon {
+  background: var(--red);
+}
+
+.status-card h2 {
+  font-size: 19px;
+}
+
+.status-card p, .status-card li {
+  color: var(--body);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.status-card ul {
+  display: grid;
+  gap: 8px;
+  padding-left: 18px;
+}
+
+.chat-shell {
+  display: none;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 22px;
+}
+
+.chat-shell.active {
+  display: grid;
+}
+
+.chat-main {
+  display: grid;
+  gap: 16px;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px;
+}
+
+.chat-header h2 {
+  font-size: 20px;
+}
+
+.risk-pill, .chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1.3;
+}
+
+.risk-pill {
+  color: #075e57;
+  background: #dff5f1;
+}
+
+.risk-pill.warning {
+  color: #8a5b12;
+  background: #fff0c2;
+}
+
+.risk-pill.critical {
+  color: #a12d23;
+  background: #ffe0dc;
+}
+
+.cards {
+  display: grid;
+  gap: 14px;
+}
+
+.message-card {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 14px;
+  padding: 22px;
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  color: #fff;
+  background: var(--teal);
+  border-radius: 50%;
+}
+
+.message-card.user .avatar {
+  color: var(--teal);
+  background: var(--teal-soft);
+}
+
+.message-card h3 {
+  margin-bottom: 6px;
+  color: var(--teal);
+  font-size: 16px;
+}
+
+.message-card p {
+  color: var(--ink);
+  line-height: 1.72;
+  white-space: pre-wrap;
+}
+
+.message-card.emergency {
+  background: var(--red-soft);
+  border-color: rgba(182, 55, 43, 0.24);
+}
+
+.message-card.emergency .avatar {
+  background: var(--red);
+}
+
+.message-card.emergency h3 {
+  color: var(--red);
+}
+
+.step-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px;
+  list-style: none;
+  background: #f8fdfb;
+  border: 1px dashed rgba(8, 118, 111, 0.24);
+  border-radius: 12px;
+}
+
+.step-list li {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.step-dot {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  color: #fff;
+  background: #1aa375;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.step-list li.running {
+  color: var(--teal);
+  font-weight: 900;
+}
+
+.step-list li.running .step-dot {
+  background: transparent;
+  border: 2px solid var(--teal);
+  border-top-color: transparent;
+  animation: spin .8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.followup-list, .report-list, .facts-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  list-style: none;
+}
+
+.followup-list li, .report-list li {
+  position: relative;
+  padding-left: 18px;
+  color: var(--ink);
+  line-height: 1.62;
+}
+
+.followup-list li::before, .report-list li::before {
+  position: absolute;
+  left: 0;
+  color: var(--teal);
+  content: "•";
+}
+
+.quick-replies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 12px;
+}
+
+.quick-replies button {
+  min-height: 38px;
+  padding: 0 12px;
+  color: #174a49;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-weight: 800;
+}
+
+.report-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.report-box {
+  padding: 14px;
+  background: #f8fdfb;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.report-box h4 {
+  margin-bottom: 8px;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.doctor-summary {
+  margin-top: 12px;
+  padding: 16px;
+  color: var(--ink);
+  background: var(--teal-soft);
+  border: 1px solid rgba(8, 118, 111, 0.18);
+  border-radius: 12px;
+  line-height: 1.7;
+}
+
+.copy-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.chat-input {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+}
+
+.chat-input textarea {
+  min-height: 42px;
+  max-height: 120px;
+  padding: 10px 6px;
+  background: transparent;
+  border: 0;
+  resize: none;
+}
+
+.chat-input textarea:focus {
+  box-shadow: none;
+}
+
+.send-btn {
+  flex-shrink: 0;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.side-card {
+  padding: 20px;
+}
+
+.side-card h3 {
+  margin-bottom: 14px;
+  font-size: 17px;
+}
+
+.facts-list {
+  gap: 9px;
+}
+
+.facts-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid rgba(8, 118, 111, 0.09);
+  font-size: 14px;
+}
+
+.facts-list span {
+  color: var(--muted);
+}
+
+.facts-list strong {
+  color: var(--ink);
+  text-align: right;
+}
+
+.source {
+  display: block;
+  margin-top: 10px;
+  padding: 10px 12px;
+  color: #174a49;
+  text-decoration: none;
+  background: #f8fdfb;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.source b {
+  display: inline-flex;
+  margin-right: 6px;
+  padding: 1px 6px;
+  color: #fff;
+  background: #1aa375;
+  border-radius: 999px;
+  font-size: 11px;
+}
+
+.toast {
+  position: fixed;
+  right: 24px;
+  top: 82px;
+  z-index: 30;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 13px 15px;
+  color: #7b2f19;
+  background: #fff5e8;
+  border: 1px solid rgba(192, 96, 36, 0.25);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+
+.hidden { display: none !important; }
+
+@media (max-width: 980px) {
+  .app, .consult-panel, .chat-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .side-col {
+    grid-row: auto;
+  }
+
+  .report-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .topbar {
+    padding: 0 14px;
+  }
+
+  .brand small, .nav-actions .ghost-btn {
+    display: none;
+  }
+
+  .app {
+    width: min(100% - 24px, 1280px);
+    margin-top: 16px;
+  }
+
+  .consult-panel, .message-card {
+    padding: 18px;
+  }
+
+  .message-card {
+    grid-template-columns: 1fr;
+  }
+
+  .start-row .btn, .start-row .ghost-btn {
+    width: 100%;
+  }
+}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html" aria-label="返回问康介绍页">
+    <span class="brand-mark">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.5-1.5 3-3.2 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.8 0-3 .5-4.5 2-1.5-1.5-2.7-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4 3 5.5l7 7z"/><path d="M3.2 12h4l2-3.5 3 6 2-3.5h6"/></svg>
+    </span>
+    <span><strong>问康</strong><small>CARECUE</small></span>
+  </a>
+  <nav class="nav-actions" aria-label="体验页导航">
+    <a class="ghost-btn" href="index.html">产品介绍</a>
+    <button class="icon-btn" id="newCaseBtn" type="button" title="新咨询">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+  </nav>
+</header>
+
+<main class="app">
+  <section class="main-col" id="consultView">
+    <div class="panel consult-panel">
+      <div class="consult-copy">
+        <span class="kicker">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 12l2 2 4-5"/><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          就医前症状整理
+        </span>
+        <h1>先用一句话说哪里不舒服</h1>
+        <p>问康会先核查危险信号，再把症状、持续时间、伴随表现和就医沟通要点整理成一份清晰报告。</p>
+
+        <div class="input-block">
+          <label>
+            这次想咨询什么不舒服？
+            <textarea id="complaint" placeholder="比如：我爸最近总头晕，站起来更明显。"></textarea>
+          </label>
+          <div class="case-intro">
+            <strong>选择一个真实案例走完整流程</strong>
+            <span>以下案例为脱敏演示脚本，离线运行，不进行真实联网检索。</span>
+          </div>
+          <div class="case-grid">
+            <button class="case-card active" type="button" data-case="dizziness" data-example="我爸 68 岁，最近三天总是头晕，站起来更明显，有高血压，平时吃降压药。">
+              <em>案例 1</em>
+              <b>老人头晕</b>
+              <span>多轮追问后生成门诊评估和医生摘要。</span>
+            </button>
+            <button class="case-card danger" type="button" data-case="chest" data-example="我妈 62 岁，今天胸口压榨样疼，出了冷汗，还有点喘不上气。">
+              <em>案例 2</em>
+              <b>胸闷急症</b>
+              <span>命中红旗规则，直接生成急诊提醒。</span>
+            </button>
+            <button class="case-card" type="button" data-case="cough" data-example="孩子 8 岁，咳嗽两周，晚上更明显，偶尔有痰，没有明显发烧，想知道要挂什么科。">
+              <em>案例 3</em>
+              <b>孩子久咳</b>
+              <span>补充伴随症状后输出就医前整理报告。</span>
+            </button>
+          </div>
+          <div class="start-row">
+            <button class="btn" id="startBtn" type="button">
+              开始说明症状
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>
+            </button>
+            <span class="meta-note">演示数据本地运行，不上传任何健康信息。</span>
+          </div>
+        </div>
+      </div>
+
+      <aside class="status-card" id="safetyCard">
+        <div class="status-head">
+          <span class="status-icon" id="safetyIcon">
+            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+          </span>
+          <h2 id="safetyTitle">安全提醒</h2>
+        </div>
+        <p id="safetyText">如果出现胸痛伴呼吸困难、突发剧烈头痛、一侧肢体无力、意识模糊、大量出血等情况，请优先线下急诊。</p>
+        <ul>
+          <li>问康不提供确诊结论。</li>
+          <li>药物相关建议只说明边界，不替代医生或药师。</li>
+          <li>高危组合由规则优先拦截。</li>
+        </ul>
+      </aside>
+    </div>
+  </section>
+
+  <aside class="side-col" id="introSide">
+    <section class="panel side-card">
+      <h3>本次体验会看到</h3>
+      <ul class="facts-list">
+        <li><span>输入方式</span><strong>自然语言</strong></li>
+        <li><span>分析过程</span><strong>流式步骤</strong></li>
+        <li><span>输出内容</span><strong>就医摘要</strong></li>
+      </ul>
+    </section>
+    <section class="panel side-card">
+      <h3>适用边界</h3>
+      <p class="meta-note">用于就医前整理和沟通准备，不替代医生面诊。急症场景请直接线下处理。</p>
+    </section>
+  </aside>
+
+  <section class="chat-shell" id="chatView">
+    <div class="chat-main">
+      <header class="panel chat-header">
+        <div>
+          <span class="kicker">问康 · 当前咨询</span>
+          <h2 id="domainTitle">症状咨询</h2>
+        </div>
+        <span class="risk-pill" id="riskPill">评估中</span>
+      </header>
+
+      <div class="cards" id="messageCards"></div>
+
+      <form class="panel chat-input" id="chatForm">
+        <textarea id="chatInput" rows="1" placeholder="继续补充症状、病史、用药或检查结果"></textarea>
+        <button class="btn send-btn" type="submit" aria-label="发送">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+        </button>
+      </form>
+    </div>
+
+    <aside class="side-col">
+      <section class="panel side-card">
+        <h3>已确认的信息</h3>
+        <ul class="facts-list" id="factsList">
+          <li><span>主诉</span><strong>整理中</strong></li>
+          <li><span>危险信号</span><strong>核查中</strong></li>
+          <li><span>建议科室</span><strong>待生成</strong></li>
+        </ul>
+      </section>
+      <section class="panel side-card">
+        <h3>参考来源</h3>
+        <a class="source" href="https://www.msdmanuals.cn/home" target="_blank" rel="noreferrer"><b>A级</b>默沙东诊疗手册</a>
+        <a class="source" href="https://www.nhs.uk/" target="_blank" rel="noreferrer"><b>A级</b>NHS 健康信息</a>
+      </section>
+      <section class="panel side-card">
+        <h3>安全边界</h3>
+        <p class="meta-note">报告只作为就医前整理；症状持续、加重或出现红旗信号时，应及时线下就医。</p>
+      </section>
+    </aside>
+  </section>
+</main>
+
+<div class="toast hidden" id="toast"></div>
+
+<script>
+const urgentKeywords = ['胸痛', '呼吸困难', '晕倒', '吐血', '意识异常', '出血', '昏迷', '说话不清', '肢体无力', '剧烈头痛'];
+const complaint = document.getElementById('complaint');
+const safetyCard = document.getElementById('safetyCard');
+const safetyTitle = document.getElementById('safetyTitle');
+const safetyText = document.getElementById('safetyText');
+const consultView = document.getElementById('consultView');
+const introSide = document.getElementById('introSide');
+const chatView = document.getElementById('chatView');
+const messageCards = document.getElementById('messageCards');
+const riskPill = document.getElementById('riskPill');
+const domainTitle = document.getElementById('domainTitle');
+const factsList = document.getElementById('factsList');
+const toast = document.getElementById('toast');
+const chatInput = document.getElementById('chatInput');
+
+function showToast(text) {
+  toast.textContent = text;
+  toast.classList.remove('hidden');
+  window.setTimeout(() => toast.classList.add('hidden'), 2600);
+}
+
+function hasUrgent(text) {
+  return urgentKeywords.some((keyword) => text.includes(keyword));
+}
+
+function detectDomain(text) {
+  if (/胸|心口|心脏|闷/.test(text)) return '胸痛胸闷';
+  if (/头晕|头痛|眩晕/.test(text)) return '头晕头痛';
+  if (/咳|嗓|痰|呼吸/.test(text)) return '咽喉与呼吸不适';
+  return '症状咨询';
+}
+
+function updateSafetyCard() {
+  if (hasUrgent(complaint.value)) {
+    safetyCard.classList.add('urgent');
+    safetyTitle.textContent = '紧急情况优先线下处理';
+    safetyText.textContent = '当前描述出现了可能需要优先排查的危险信号。不要等待线上整理结果，建议尽快联系急救或前往急诊。';
+  } else {
+    safetyCard.classList.remove('urgent');
+    safetyTitle.textContent = '安全提醒';
+    safetyText.textContent = '如果出现胸痛伴呼吸困难、突发剧烈头痛、一侧肢体无力、意识模糊、大量出血等情况，请优先线下急诊。';
+  }
+}
+
+function iconSvg(kind) {
+  if (kind === 'user') {
+    return '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 1 0-16 0"/></svg>';
+  }
+  if (kind === 'alert') {
+    return '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m21 16-8.5-14a1 1 0 0 0-1.7 0L2 16a1 1 0 0 0 .85 1.5h17.3A1 1 0 0 0 21 16Z"/><path d="M12 7v4"/><path d="M12 15h.01"/></svg>';
+  }
+  return '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-5"/></svg>';
+}
+
+function addCard({ role = 'assistant', title, body, extra = '', emergency = false }) {
+  const card = document.createElement('article');
+  card.className = `panel message-card ${role}${emergency ? ' emergency' : ''}`;
+  card.innerHTML = `
+    <div class="avatar">${iconSvg(emergency ? 'alert' : role)}</div>
+    <div>
+      <h3>${title}</h3>
+      <p>${body}</p>
+      ${extra}
+    </div>
+  `;
+  messageCards.appendChild(card);
+  card.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  return card;
+}
+
+function setFacts(items) {
+  factsList.innerHTML = items.map(([label, value]) => `<li><span>${label}</span><strong>${value}</strong></li>`).join('');
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function addLiveSteps(isEmergency) {
+  const card = addCard({
+    title: '问康 · 正在整理',
+    body: '我会先把症状信息结构化，再核查危险信号。',
+    extra: '<ul class="step-list" id="liveSteps"></ul>'
+  });
+  const list = card.querySelector('#liveSteps');
+  const steps = isEmergency
+    ? ['提取症状信息', '核查危险信号', '命中高危组合', '生成急诊沟通摘要']
+    : ['提取症状信息', '识别症状域', '核查危险信号', '整理可能方向', '生成就医前摘要'];
+
+  for (const step of steps) {
+    const li = document.createElement('li');
+    li.className = 'running';
+    li.innerHTML = '<span class="step-dot"></span><span>' + step + '</span>';
+    list.appendChild(li);
+    await sleep(620);
+    li.classList.remove('running');
+    li.querySelector('.step-dot').textContent = '✓';
+  }
+}
+
+function normalReport(text) {
+  const chest = /胸|闷|心口/.test(text);
+  const cough = /咳|痰|嗓/.test(text);
+  const department = chest ? '心内科 / 全科医学科' : cough ? '呼吸内科 / 全科医学科' : '神经内科 / 全科医学科';
+  const direction = chest ? '活动后胸闷，需要优先排查心血管相关风险' : cough ? '持续咳嗽，需结合病程和伴随症状评估呼吸道问题' : '头晕头痛，需结合体位、血压、神经系统症状进一步判断';
+  domainTitle.textContent = detectDomain(text);
+  riskPill.textContent = '低到中风险，建议门诊评估';
+  riskPill.className = 'risk-pill warning';
+  setFacts([
+    ['主诉', detectDomain(text)],
+    ['危险信号', '暂未命中急症组合'],
+    ['建议科室', department],
+    ['下一步', '补充信息或门诊评估']
+  ]);
+
+  addCard({
+    title: '问康 · 阶段性整理',
+    body: '目前没有看到必须立即急诊的组合，但仍建议结合年龄、基础病和症状变化做线下评估。',
+    extra: `
+      <div class="report-grid">
+        <div class="report-box">
+          <h4>可能方向</h4>
+          <ul class="report-list">
+            <li>${direction}</li>
+            <li>需要继续观察症状是否持续、加重或伴随新表现。</li>
+          </ul>
+        </div>
+        <div class="report-box">
+          <h4>现在可以做</h4>
+          <ul class="report-list">
+            <li>记录发作时间、持续多久、诱因和缓解方式。</li>
+            <li>避免剧烈活动；若症状加重，及时就医。</li>
+          </ul>
+        </div>
+      </div>
+      <div class="doctor-summary" id="summaryText">医生沟通摘要：用户描述为「${text}」。目前线上整理暂未命中急症组合。建议医生重点评估症状持续时间、诱因、伴随症状、既往病史、当前用药，并根据实际查体判断是否需要进一步检查。</div>
+      <div class="copy-row">
+        <button class="ghost-btn" type="button" id="copySummary">复制医生摘要</button>
+      </div>
+    `
+  });
+
+  document.getElementById('copySummary').addEventListener('click', async () => {
+    await navigator.clipboard?.writeText(document.getElementById('summaryText').textContent || '');
+    showToast('医生摘要已复制');
+  });
+}
+
+function emergencyReport(text) {
+  domainTitle.textContent = detectDomain(text);
+  riskPill.textContent = '高风险，优先急诊或急救';
+  riskPill.className = 'risk-pill critical';
+  setFacts([
+    ['主诉', detectDomain(text)],
+    ['危险信号', '已命中'],
+    ['建议科室', '急诊科'],
+    ['下一步', '立即线下处理']
+  ]);
+
+  addCard({
+    title: '急症提醒',
+    emergency: true,
+    body: '你的描述中出现了可能需要立即处理的危险信号。线上工具不能判断安全程度，请优先联系急救或前往急诊，不建议等待线上分析。',
+    extra: `
+      <div class="doctor-summary" id="summaryText">急诊沟通摘要：用户描述为「${text}」。当前包含危险信号，建议急诊医生重点确认生命体征、症状开始时间、是否持续加重、既往心脑血管疾病、当前用药和过敏史。</div>
+      <div class="copy-row">
+        <button class="ghost-btn" type="button" id="copySummary">复制急诊摘要</button>
+      </div>
+    `
+  });
+
+  document.getElementById('copySummary').addEventListener('click', async () => {
+    await navigator.clipboard?.writeText(document.getElementById('summaryText').textContent || '');
+    showToast('急诊摘要已复制');
+  });
+}
+
+async function startConsultation() {
+  const text = complaint.value.trim();
+  if (text.length < 2) {
+    showToast('请先用一句话描述哪里不舒服。');
+    return;
+  }
+
+  consultView.classList.add('hidden');
+  introSide.classList.add('hidden');
+  chatView.classList.add('active');
+  messageCards.innerHTML = '';
+  domainTitle.textContent = detectDomain(text);
+  setFacts([
+    ['主诉', detectDomain(text)],
+    ['危险信号', '核查中'],
+    ['建议科室', '待生成']
+  ]);
+
+  addCard({ role: 'user', title: '主要诉求', body: text });
+  const urgent = hasUrgent(text);
+  await addLiveSteps(urgent);
+  if (urgent) emergencyReport(text);
+  else normalReport(text);
+}
+
+document.querySelectorAll('[data-example]').forEach((button) => {
+  button.addEventListener('click', () => {
+    complaint.value = button.dataset.example;
+    updateSafetyCard();
+  });
+});
+
+complaint.addEventListener('input', updateSafetyCard);
+document.getElementById('startBtn').addEventListener('click', startConsultation);
+document.getElementById('newCaseBtn').addEventListener('click', () => {
+  complaint.value = '';
+  chatView.classList.remove('active');
+  consultView.classList.remove('hidden');
+  introSide.classList.remove('hidden');
+  updateSafetyCard();
+});
+
+document.getElementById('chatForm').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const text = chatInput.value.trim();
+  if (!text) return;
+  chatInput.value = '';
+  addCard({ role: 'user', title: '你的补充', body: text });
+  await addLiveSteps(hasUrgent(text));
+  if (hasUrgent(text)) emergencyReport(text);
+  else addCard({
+    title: '问康 · 已更新整理',
+    body: '已把补充信息加入本次咨询。若症状持续或加重，建议线下就诊时一并告知医生。',
+    extra: '<ul class="followup-list"><li>继续记录症状变化。</li><li>如出现胸痛、呼吸困难、意识异常、肢体无力等危险信号，优先急诊。</li></ul>'
+  });
+});
+
+(function setupThreeCaseDemo() {
+  const cases = {
+    dizziness: {
+      domain: '头晕头痛',
+      input: '我爸 68 岁，最近三天总是头晕，站起来更明显，有高血压，平时吃降压药。',
+      steps: ['提取症状信息', '识别头晕场景', '核查脑卒中与心血管红旗信号', '生成追问'],
+      followupIntro: '目前还需要确认几个关键点，主要是排除需要急诊处理的神经系统信号，并判断是否与体位、血压或用药相关。',
+      questions: [
+        '头晕时有没有一侧手脚无力、说话不清、口角歪斜？',
+        '有没有胸痛、心慌、晕倒或快要晕倒的感觉？',
+        '最近血压大概多少？站起来时是否更明显？'
+      ],
+      quickAnswer: '没有手脚无力和说话不清，也没有胸痛。量过一次血压大概 105/65，比平时低，站起来更晕。',
+      riskText: '中低风险，建议门诊评估',
+      riskClass: 'warning',
+      facts: [
+        ['主诉', '老人头晕'],
+        ['危险信号', '已询问，暂未命中急症组合'],
+        ['重点线索', '体位相关、血压偏低'],
+        ['建议科室', '全科医学科 / 神经内科']
+      ],
+      reportTitle: '问康 · 症状处理报告',
+      conclusion: '目前更需要关注体位性低血压、降压药相关血压偏低、脱水或前庭系统问题等方向。由于用户 68 岁且有高血压病史，建议尽快安排门诊评估，不建议只在家自行观察。',
+      boxes: [
+        ['可能方向', ['体位改变后更晕，支持体位性血压波动方向。', '近期血压低于平时，需要结合降压药、饮水、饮食和近期疾病判断。', '暂未描述说话不清、一侧无力等脑卒中典型红旗，但仍需继续观察。']],
+        ['现在可以做', ['记录卧位、坐位、站立后血压和脉搏。', '不要突然起身，避免独自洗澡、上下楼。', '带上当前降压药名称和血压记录去门诊。']]
+      ],
+      seekCare: ['出现说话不清、一侧肢体无力、口角歪斜、持续胸痛、晕倒，应立即急诊。', '如果头晕持续加重、走路不稳或反复跌倒，应尽快就医。'],
+      summary: '医生沟通摘要：患者父亲，68 岁，有高血压史，近 3 天头晕，站起后更明显；曾测血压约 105/65，低于平时。否认一侧肢体无力、说话不清、胸痛。请重点评估体位性低血压、降压药相关血压偏低、前庭系统问题及脑血管风险。'
+    },
+    chest: {
+      domain: '胸痛胸闷',
+      input: '我妈 62 岁，今天胸口压榨样疼，出了冷汗，还有点喘不上气。',
+      emergency: true,
+      steps: ['提取症状信息', '识别胸痛胸闷场景', '核查红旗组合', '命中胸痛伴冷汗和呼吸困难', '生成急诊沟通摘要'],
+      riskText: '高风险，优先急诊或急救',
+      riskClass: 'critical',
+      facts: [
+        ['主诉', '胸口压榨样疼'],
+        ['危险信号', '胸痛 + 冷汗 + 呼吸困难'],
+        ['建议科室', '急诊科'],
+        ['下一步', '立即线下处理']
+      ],
+      conclusion: '当前描述包含胸痛胸闷伴冷汗、呼吸困难等危险信号，线上工具不能判断是否安全，不建议继续等待线上分析。请立即拨打 120 或前往急诊。',
+      summary: '急诊沟通摘要：患者母亲，62 岁，今日出现胸口压榨样疼痛，伴出冷汗和喘不上气。请急诊医生重点评估急性冠脉综合征、肺栓塞等高危情况，并尽快进行生命体征、心电图、心肌标志物等检查。'
+    },
+    cough: {
+      domain: '咽喉与呼吸不适',
+      input: '孩子 8 岁，咳嗽两周，晚上更明显，偶尔有痰，没有明显发烧，想知道要挂什么科。',
+      steps: ['提取症状信息', '识别咳嗽场景', '核查呼吸困难和持续高热', '整理缺失信息', '生成追问'],
+      followupIntro: '咳嗽已经持续两周，需要确认有没有呼吸困难、喘鸣、持续高热，以及是否与过敏、鼻后滴流或感染后咳嗽相关。',
+      questions: [
+        '孩子有没有喘不上气、嘴唇发紫、精神很差？',
+        '咳嗽是干咳多，还是有黄绿色痰？',
+        '晚上咳嗽是否伴随鼻塞、流涕、打喷嚏或接触冷空气后加重？'
+      ],
+      quickAnswer: '精神还可以，没有喘不上气和嘴唇发紫。多是干咳，晚上和跑动后明显，有点鼻塞流涕。',
+      riskText: '低风险，可门诊评估',
+      riskClass: 'warning',
+      facts: [
+        ['主诉', '儿童咳嗽两周'],
+        ['危险信号', '暂未命中'],
+        ['重点线索', '夜间、运动后、鼻部症状'],
+        ['建议科室', '儿科 / 呼吸科']
+      ],
+      reportTitle: '问康 · 咳嗽处理报告',
+      conclusion: '目前未出现必须立即急诊的表现，但咳嗽已持续两周，且夜间和运动后明显，建议儿科或呼吸科门诊评估。可能与感染后咳嗽、过敏/鼻后滴流、咳嗽变异性哮喘等方向有关。',
+      boxes: [
+        ['可能方向', ['感染后咳嗽：病程较长、发热不明显时需要考虑。', '鼻后滴流或过敏相关：鼻塞流涕、夜间明显支持这一方向。', '咳嗽变异性哮喘：运动后和夜间明显，需要医生结合听诊和检查判断。']],
+        ['现在可以做', ['记录夜间咳嗽次数、运动后是否加重、是否喘鸣。', '保持室内通风和适度湿度，避免烟雾、香薰、粉尘刺激。', '不要自行使用抗生素或成人止咳药。']]
+      ],
+      seekCare: ['出现呼吸困难、嘴唇发紫、精神萎靡、持续高热，应立即就医。', '咳嗽超过 3 周、反复夜间咳醒或运动后喘鸣，建议尽快门诊。'],
+      summary: '医生沟通摘要：8 岁儿童，咳嗽 2 周，夜间和跑动后更明显，偶有痰，无明显发热；补充信息提示精神尚可，无呼吸困难和口唇发紫，伴鼻塞流涕。请重点评估感染后咳嗽、过敏/鼻后滴流、咳嗽变异性哮喘等方向。'
+    }
+  };
+
+  let selectedCaseId = 'dizziness';
+  let currentCase = cases[selectedCaseId];
+  let finalGenerated = false;
+
+  function q(selector) {
+    return document.querySelector(selector);
+  }
+
+  function qa(selector) {
+    return Array.from(document.querySelectorAll(selector));
+  }
+
+  function escapeHtml(value) {
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function resetButtons() {
+    const start = q('#startBtn');
+    const startClone = start.cloneNode(true);
+    start.replaceWith(startClone);
+    startClone.addEventListener('click', startCaseFlow);
+
+    const form = q('#chatForm');
+    const formClone = form.cloneNode(true);
+    form.replaceWith(formClone);
+    formClone.addEventListener('submit', handleCaseSupplement);
+
+    const newCase = q('#newCaseBtn');
+    const newCaseClone = newCase.cloneNode(true);
+    newCase.replaceWith(newCaseClone);
+    newCaseClone.addEventListener('click', resetCaseFlow);
+  }
+
+  function pickCase(caseId) {
+    selectedCaseId = caseId;
+    currentCase = cases[caseId];
+    q('#complaint').value = currentCase.input;
+    qa('[data-case]').forEach((button) => button.classList.toggle('active', button.dataset.case === caseId));
+    if (caseId === 'chest') {
+      q('#safetyCard').classList.add('urgent');
+      q('#safetyTitle').textContent = '紧急情况优先线下处理';
+      q('#safetyText').textContent = '这个案例包含胸痛、冷汗、呼吸困难等红旗信号，会直接进入急症提醒流程。';
+    } else {
+      q('#safetyCard').classList.remove('urgent');
+      q('#safetyTitle').textContent = '安全提醒';
+      q('#safetyText').textContent = '这个案例会先做危险信号核查，再通过补充信息生成就医前报告。';
+    }
+  }
+
+  function setCaseFacts(items) {
+    factsList.innerHTML = items.map(([label, value]) => `<li><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></li>`).join('');
+  }
+
+  async function playSteps(steps) {
+    addCard({
+      title: '问康 · 正在整理',
+      body: '下面是本案例的离线演示流程，模拟真实产品中的 Agent 工作步骤。',
+      extra: '<ul class="step-list" id="caseLiveSteps"></ul>'
+    });
+    const list = q('#caseLiveSteps');
+    for (const step of steps) {
+      const li = document.createElement('li');
+      li.className = 'running';
+      li.innerHTML = `<span class="step-dot"></span><span>${escapeHtml(step)}</span>`;
+      list.appendChild(li);
+      await sleep(520);
+      li.classList.remove('running');
+      li.querySelector('.step-dot').textContent = '✓';
+    }
+  }
+
+  async function startCaseFlow() {
+    const text = q('#complaint').value.trim();
+    if (text.length < 2) {
+      showToast('请先选择一个案例，或用一句话描述症状。');
+      return;
+    }
+
+    const matched = qa('[data-case]').find((button) => button.dataset.example === text);
+    if (matched) {
+      currentCase = cases[matched.dataset.case];
+      selectedCaseId = matched.dataset.case;
+    }
+
+    finalGenerated = false;
+    consultView.classList.add('hidden');
+    introSide.classList.add('hidden');
+    chatView.classList.add('active');
+    messageCards.innerHTML = '';
+    domainTitle.textContent = currentCase.domain;
+    riskPill.textContent = '评估中';
+    riskPill.className = 'risk-pill';
+    setCaseFacts([
+      ['主诉', currentCase.domain],
+      ['危险信号', '核查中'],
+      ['建议科室', '待生成']
+    ]);
+
+    addCard({ role: 'user', title: '主要诉求', body: text });
+    await playSteps(currentCase.steps);
+
+    if (currentCase.emergency) {
+      showEmergencyCase(currentCase);
+      finalGenerated = true;
+      return;
+    }
+
+    showFollowup(currentCase);
+  }
+
+  function showFollowup(caseData) {
+    riskPill.textContent = '需要补充关键信息';
+    riskPill.className = 'risk-pill warning';
+    setCaseFacts([
+      ['主诉', caseData.domain],
+      ['危险信号', '追问中'],
+      ['建议科室', '待确认'],
+      ['下一步', '回答关键追问']
+    ]);
+
+    addCard({
+      title: '问康 · 补充关键信息',
+      body: caseData.followupIntro,
+      extra: `
+        <ul class="followup-list">
+          ${caseData.questions.map((question) => `<li>${escapeHtml(question)}</li>`).join('')}
+        </ul>
+        <div class="quick-replies">
+          <button type="button" data-case-answer="${selectedCaseId}">${escapeHtml(caseData.quickAnswer)}</button>
+          <button type="button" data-case-answer="${selectedCaseId}">我暂时不清楚，先按已有信息整理。</button>
+        </div>
+      `
+    });
+
+    qa('[data-case-answer]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        qa('[data-case-answer]').forEach((item) => item.disabled = true);
+        await finishCase(caseData, button.textContent.trim());
+      });
+    });
+  }
+
+  async function finishCase(caseData, answer) {
+    addCard({ role: 'user', title: '你的补充', body: answer });
+    await playSteps(['合并补充信息', '复核危险信号', '整理可能方向', '生成医生沟通摘要']);
+    showNormalCase(caseData);
+    finalGenerated = true;
+  }
+
+  function reportBoxes(caseData) {
+    return caseData.boxes.map(([title, items]) => `
+      <div class="report-box">
+        <h4>${escapeHtml(title)}</h4>
+        <ul class="report-list">
+          ${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
+        </ul>
+      </div>
+    `).join('');
+  }
+
+  function showNormalCase(caseData) {
+    domainTitle.textContent = caseData.domain;
+    riskPill.textContent = caseData.riskText;
+    riskPill.className = `risk-pill ${caseData.riskClass}`;
+    setCaseFacts(caseData.facts);
+
+    addCard({
+      title: caseData.reportTitle,
+      body: caseData.conclusion,
+      extra: `
+        <div class="report-grid">${reportBoxes(caseData)}</div>
+        <div class="report-box" style="margin-top:12px;">
+          <h4>需要就医的信号</h4>
+          <ul class="report-list">
+            ${caseData.seekCare.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
+          </ul>
+        </div>
+        <div class="doctor-summary" id="summaryText">${escapeHtml(caseData.summary)}</div>
+        <div class="copy-row">
+          <button class="ghost-btn" type="button" id="copySummary">复制医生摘要</button>
+          <button class="ghost-btn" type="button" data-reset-case>体验其他案例</button>
+        </div>
+      `
+    });
+    wireReportButtons();
+  }
+
+  function showEmergencyCase(caseData) {
+    domainTitle.textContent = caseData.domain;
+    riskPill.textContent = caseData.riskText;
+    riskPill.className = `risk-pill ${caseData.riskClass}`;
+    setCaseFacts(caseData.facts);
+
+    addCard({
+      title: '急症提醒',
+      emergency: true,
+      body: caseData.conclusion,
+      extra: `
+        <div class="doctor-summary" id="summaryText">${escapeHtml(caseData.summary)}</div>
+        <div class="copy-row">
+          <button class="ghost-btn" type="button" id="copySummary">复制急诊摘要</button>
+          <button class="ghost-btn" type="button" data-reset-case>体验其他案例</button>
+        </div>
+      `
+    });
+    wireReportButtons();
+  }
+
+  function wireReportButtons() {
+    const copy = q('#copySummary');
+    if (copy) {
+      copy.addEventListener('click', async () => {
+        await navigator.clipboard?.writeText(q('#summaryText')?.textContent || '');
+        showToast('摘要已复制');
+      });
+    }
+    qa('[data-reset-case]').forEach((button) => button.addEventListener('click', resetCaseFlow));
+  }
+
+  async function handleCaseSupplement(event) {
+    event.preventDefault();
+    const input = q('#chatInput');
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    addCard({ role: 'user', title: '你的补充', body: text });
+    await playSteps(hasUrgent(text) ? ['识别补充信息', '命中危险信号', '生成急症提醒'] : ['识别补充信息', '更新已知信息', '复核风险']);
+    if (hasUrgent(text)) {
+      showEmergencyCase(cases.chest);
+      finalGenerated = true;
+    } else if (!finalGenerated && !currentCase.emergency) {
+      showNormalCase(currentCase);
+      finalGenerated = true;
+    } else {
+      addCard({
+        title: '问康 · 已记录补充',
+        body: '已把补充信息加入当前咨询。正式系统会继续结合上下文追问或更新报告；本页为离线演示，核心流程已完整展示。',
+      });
+    }
+  }
+
+  function resetCaseFlow() {
+    chatView.classList.remove('active');
+    consultView.classList.remove('hidden');
+    introSide.classList.remove('hidden');
+    messageCards.innerHTML = '';
+    q('#chatInput').value = '';
+    finalGenerated = false;
+    pickCase(selectedCaseId);
+  }
+
+  resetButtons();
+  qa('[data-case]').forEach((button) => {
+    button.addEventListener('click', () => pickCase(button.dataset.case));
+  });
+  pickCase('dizziness');
+})();
+</script>
+</body>
+</html>

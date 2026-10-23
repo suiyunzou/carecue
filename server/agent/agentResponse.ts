@@ -4,7 +4,7 @@ import type { CaseState, FollowupQuestion } from './case/CaseState.ts'
 import type { RiskLevel } from './risk/riskLevel.ts'
 import type { FinalReport } from './report/reportSchema.ts'
 import { buildKnownFacts, fieldHasValue } from './case/stateFields.ts'
-import { sanitizeInternalCodes } from './risk/riskPresentation.ts'
+import { sanitizeUserVisibleText } from './risk/riskPresentation.ts'
 
 export type Citation = {
   index: number
@@ -76,7 +76,7 @@ export function buildCitations(state: CaseState): Citation[] {
     seen.add(e.sourceUrl)
     citations.push({
       index: citations.length + 1,
-      title: e.sourceTitle,
+      title: sanitizeUserVisibleText(e.sourceTitle),
       url: e.sourceUrl,
       credibility: e.credibility,
     })
@@ -90,14 +90,20 @@ export function buildStateSnapshot(state: CaseState): AgentResponseBase['stateSn
     chiefComplaint: state.symptoms.chiefComplaint,
     primaryDomain: state.symptomDomain.primaryDomain,
     riskLevel: state.risk.level,
-    riskReason: sanitizeInternalCodes(state.risk.reason),
+    riskReason: sanitizeUserVisibleText(state.risk.reason),
     inRiskProbe: state.riskProbe.probeStatus === 'in_progress',
-    knownFacts: buildKnownFacts(state),
-    hypotheses: state.hypotheses.map((h) => ({ name: h.name, likelihood: h.likelihood })),
-    evidenceSources: citations.map((c) => ({ title: c.title, url: c.url, credibility: c.credibility })),
+    knownFacts: buildKnownFacts(state).map((f) => ({
+      label: sanitizeUserVisibleText(f.label),
+      value: sanitizeUserVisibleText(f.value),
+    })),
+    hypotheses: state.hypotheses.map((h) => ({
+      name: sanitizeUserVisibleText(h.name),
+      likelihood: h.likelihood,
+    })),
+    evidenceSources: citations.map((c) => ({ title: sanitizeUserVisibleText(c.title), url: c.url, credibility: c.credibility })),
     citations,
     searchQueries: Array.from(new Set(state.searchTrace.map((t) => t.query))),
-    missingInfo: buildPendingMissingQuestions(state),
+    missingInfo: buildPendingMissingQuestions(state).map((q) => sanitizeUserVisibleText(q)),
   }
 }
 

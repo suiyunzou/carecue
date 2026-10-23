@@ -19,6 +19,7 @@ export function buildGenerateReportPrompt(state: CaseState, guardIssues?: string
 8. 医生沟通摘要必须包含：主诉、病程、部位、严重程度、诱因、缓解因素、伴随症状、否认症状、已出现的风险信号、AI 整理的疑似方向、希望医生确认或排除的问题。
 9. references 只允许引用提供的 evidence 来源，不得编造链接。
 10. 全文控制在 ${AGENT_LIMITS.maxFinalReportChars} 字以内，不塞入完整网页正文。
+11. 用户可见文本必须使用自然语言，不得输出 JSON 字段名、内部枚举、症状域 code、错误码或工具名，例如 symptoms.location、userProfile.age、skin_mild、throat_respiratory、must_rule_out、R0-R3、TOOL_RUNTIME_ERROR。
 ${guardIssues && guardIssues.length > 0 ? `\n上一版报告未通过安全复核，必须修复以下问题：\n${guardIssues.map((issue, i) => `${i + 1}. ${issue}`).join('\n')}` : ''}
 
 只返回符合 JSON Schema 的 JSON。`

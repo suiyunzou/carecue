@@ -19,6 +19,8 @@ const llmEvidenceSchema = z.object({
   relevant: z.boolean(),
 })
 
+const EVIDENCE_EXTRACT_LLM_BUDGET_MS = Number(process.env.AGENT_EVIDENCE_EXTRACT_LLM_BUDGET_MS ?? 12000)
+
 export async function extractEvidenceFromPage(
   page: FetchedPage,
   state: CaseState,
@@ -35,6 +37,7 @@ export async function extractEvidenceFromPage(
       schemaName: 'evidence_extraction',
       system: prompt.system,
       user: prompt.user,
+      maxDurationMs: EVIDENCE_EXTRACT_LLM_BUDGET_MS,
       trace: traceLogger ? { traceLogger, caseId: state.caseId, node: 'evidence.extract' } : undefined,
     })
 
